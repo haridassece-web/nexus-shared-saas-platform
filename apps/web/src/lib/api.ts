@@ -1,11 +1,11 @@
 import { supabase } from "./supabase";
 
 const rawApiUrl = import.meta.env.VITE_API_URL || "";
-// Only use external HTTP API if explicitly configured with an https URL or if running in local dev with localhost
+// Only use external HTTP API if explicitly configured with an https URL
 const hasExternalApi = Boolean(
   rawApiUrl &&
     rawApiUrl !== "http://localhost:4000" &&
-    rawApiUrl.startsWith("http")
+    rawApiUrl.startsWith("https://")
 );
 
 export async function api<T>(
@@ -31,7 +31,6 @@ export async function api<T>(
       if (!r.ok) throw new Error(body.error || "Request failed");
       return body as T;
     } catch (e: any) {
-      // If external API fails, fall through to direct Supabase client below
       console.warn("External API call failed, falling back to direct Supabase:", e);
     }
   }
@@ -82,20 +81,50 @@ async function handleDirectSupabase<T>(
     }
   }
 
-  // 2. Retail Products
+  // 2. Categories
+  if (cleanPath === "/categories" || cleanPath === "categories") {
+    if (!businessId) throw new Error("Workspace business ID required");
+    if (method === "GET") {
+      const { data, error } = await supabase
+        .from("categories")
+        .select("id,name,description")
+        .eq("business_id", businessId)
+        .order("name");
+      if (error) throw error;
+      return data as T;
+    }
+    if (method === "POST") {
+      const { data, error } = await supabase
+        .from("categories")
+        .insert({
+          business_id: businessId,
+          name: body.name,
+          description: body.description || null,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return data as T;
+    }
+  }
+
+  // 3. Retail Products
   if (cleanPath === "/retail/products" || cleanPath === "retail/products") {
     if (!businessId) throw new Error("Workspace business ID required");
     if (method === "GET") {
       const { data, error } = await supabase
         .from("products")
         .select(
-          "id,name,barcode,hsn_code,unit,selling_price,purchase_price,gst_rate,stock_qty,low_stock_threshold"
+          "id,name,sku,barcode,hsn_code,unit,selling_price,purchase_price,gst_rate,stock_qty,low_stock_threshold,category_id,categories(name)"
         )
         .eq("business_id", businessId)
         .eq("is_active", true)
         .order("name");
       if (error) throw error;
-      return data as T;
+      return (data || []).map((p: any) => ({
+        ...p,
+        category_name: p.categories?.name || null,
+      })) as T;
     }
     if (method === "POST") {
       const { data, error } = await supabase
@@ -108,7 +137,36 @@ async function handleDirectSupabase<T>(
     }
   }
 
-  // 3. Retail Invoices (GST Calculation & Atomic Stock Lock)
+  // 4. Bulk products
+  if (
+    cleanPath === "/retail/products/bulk" ||
+    cleanPath === "retail/products/bulk"
+  ) {
+    if (!businessId) throw new Error("Workspace business ID required");
+    const items = Array.isArray(body) ? body : body.items || [];
+    const toInsert = items.map((p: any) => ({
+      business_id: businessId,
+      name: p.name,
+      sku: p.sku || null,
+      barcode: p.barcode || null,
+      hsn_code: p.hsn_code || null,
+      unit: p.unit || "pcs",
+      selling_price: Number(p.selling_price || 0),
+      purchase_price: Number(p.purchase_price || 0),
+      gst_rate: Number(p.gst_rate || 0),
+      stock_qty: Number(p.stock_qty || 0),
+      low_stock_threshold: Number(p.low_stock_threshold || 5),
+      category_id: p.category_id || null,
+    }));
+    const { data, error } = await supabase
+      .from("products")
+      .insert(toInsert)
+      .select();
+    if (error) throw error;
+    return { count: data?.length || 0, items: data } as T;
+  }
+
+  // 5. Retail Invoices (GST Calculation & Atomic Stock Lock)
   if (cleanPath === "/retail/invoices" || cleanPath === "retail/invoices") {
     if (!businessId) throw new Error("Workspace business ID required");
     const { data, error } = await supabase.rpc("create_gst_invoice", {
@@ -124,7 +182,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 4. Inventory Stock Adjustments
+  // 6. Inventory Stock Adjustments
   if (cleanPath === "/inventory/adjust" || cleanPath === "inventory/adjust") {
     if (!businessId) throw new Error("Workspace business ID required");
     const { data, error } = await supabase.rpc("adjust_stock", {
@@ -137,7 +195,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 5. Sales Reports
+  // 7. Sales Reports
   if (
     cleanPath.startsWith("/retail/reports/sales") ||
     cleanPath.startsWith("retail/reports/sales")
@@ -152,7 +210,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 6. Subscriptions
+  // 8. Subscriptions
   if (cleanPath === "/subscription" || cleanPath === "subscription") {
     if (!businessId) throw new Error("Workspace business ID required");
     const { data, error } = await supabase.rpc("tenant_subscription_status", {
@@ -162,7 +220,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 7. Subscription Plans
+  // 9. Subscription Plans
   if (cleanPath === "/plans" || cleanPath === "plans") {
     const { data, error } = await supabase
       .from("subscription_plans")
@@ -175,7 +233,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 8. Customers
+  // 10. Customers
   if (cleanPath === "/customers" || cleanPath === "customers") {
     if (!businessId) throw new Error("Workspace business ID required");
     if (method === "GET") {
@@ -203,7 +261,7 @@ async function handleDirectSupabase<T>(
     }
   }
 
-  // 9. Stock Movements
+  // 11. Stock Movements
   if (
     cleanPath === "/inventory/movements" ||
     cleanPath === "inventory/movements"
@@ -221,7 +279,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 10. Payments
+  // 12. Payments
   if (cleanPath === "/payments" || cleanPath === "payments") {
     if (!businessId) throw new Error("Workspace business ID required");
     const { data, error } = await supabase
@@ -236,7 +294,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 11. Platform Admin
+  // 13. Platform Admin
   if (
     cleanPath === "/platform/overview" ||
     cleanPath === "platform/overview"
