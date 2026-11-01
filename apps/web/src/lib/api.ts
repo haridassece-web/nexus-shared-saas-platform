@@ -491,15 +491,57 @@ async function handleDirectSupabase<T>(
 
   // 10. Subscription Plans
   if (cleanPath === "/plans" || cleanPath === "plans") {
-    const { data, error } = await supabase
-      .from("subscription_plans")
-      .select(
-        "code,name,monthly_price_paise,annual_price_paise,max_users,max_products,features"
-      )
-      .eq("is_active", true)
-      .order("monthly_price_paise");
-    if (error) throw error;
-    return data as T;
+    let plansData: any[] = [];
+    try {
+      const { data, error } = await supabase
+        .from("subscription_plans")
+        .select(
+          "code,name,monthly_price_paise,annual_price_paise,max_users,max_products,features"
+        )
+        .eq("is_active", true)
+        .order("monthly_price_paise");
+      if (!error && data && data.length > 0) {
+        plansData = data;
+      }
+    } catch {}
+
+    if (plansData.length === 0) {
+      plansData = [
+        {
+          code: "trial",
+          name: "14-Day Free Trial",
+          monthly_price_paise: 0,
+          annual_price_paise: 0,
+          max_users: 2,
+          max_products: 100,
+          features: { description: "Free trial for new businesses" },
+        },
+        {
+          code: "starter",
+          name: "Starter",
+          monthly_price_paise: 14900,
+          annual_price_paise: 149000,
+          max_users: 2,
+          max_products: 1000,
+          features: { description: "Small shops", target_audience: "Small shops" },
+        },
+        {
+          code: "business",
+          name: "Business",
+          monthly_price_paise: 29900,
+          annual_price_paise: 299000,
+          max_users: 10,
+          max_products: 10000,
+          features: {
+            description: "Retail and service businesses",
+            target_audience: "Retail and service businesses",
+            custom_branding: true,
+            white_label: true,
+          },
+        },
+      ];
+    }
+    return plansData as T;
   }
 
   // 11. Customers

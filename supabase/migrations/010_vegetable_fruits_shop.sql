@@ -134,3 +134,4 @@ begin
   end if;
 end $$;
 grant execute on function public.seed_category_starter_items(uuid, text) to authenticated;
+
