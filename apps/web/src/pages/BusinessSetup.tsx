@@ -29,6 +29,8 @@ export function BusinessSetup() {
       salon: "SAL",
       beauty_parlour: "BTY",
       spa: "SPA",
+      vegetable_fruits_shop: "VEG",
+      fruits_vegetables_shop: "VEG",
       supermarket: "SMART",
       grocery_store: "GROC",
       retail_shop: "RET",
@@ -123,7 +125,8 @@ export function BusinessSetup() {
               <option value="tailoring">Tailoring</option>
             </optgroup>
 
-            <optgroup label="🛒 Retail, Supermarkets & Trading (12)">
+            <optgroup label="🛒 Retail, Fresh Produce & Trading (13)">
+              <option value="vegetable_fruits_shop">Vegetable & Fruits Shop</option>
               <option value="supermarket">Supermarket</option>
               <option value="grocery_store">Grocery Store</option>
               <option value="retail_shop">Retail Shop</option>

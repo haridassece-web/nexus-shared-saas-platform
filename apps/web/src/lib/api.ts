@@ -155,6 +155,50 @@ async function handleDirectSupabase<T>(
 
       // Seed starter categories & items
       if (targetId) {
+        // 1. Seed categories
+        try {
+          const { error: catRpcErr } = await supabase.rpc("seed_business_categories", {
+            p_business_id: targetId,
+            p_business_type: body.business_type,
+          });
+          if (catRpcErr) throw catRpcErr;
+        } catch {
+          // Direct fallback category seeding
+          const catNames =
+            body.business_type === "vegetable_fruits_shop" || body.business_type === "fruits_vegetables_shop"
+              ? [
+                  "Fresh Vegetables",
+                  "Fresh Fruits",
+                  "Leafy Greens & Herbs",
+                  "Exotic & Organic Produce",
+                  "Tubers & Root Vegetables",
+                  "Sprouts & Microgreens",
+                  "Fresh Cut & Ready-to-Cook",
+                  "Seasonal Specials",
+                  "Dry Fruits & Nuts",
+                ]
+              : body.business_type === "supermarket"
+              ? [
+                  "Rice & Grains",
+                  "Pulses & Dals",
+                  "Oils & Ghee",
+                  "Dairy Products",
+                  "Fruits & Vegetables",
+                  "Snacks & Biscuits",
+                  "Beverages",
+                  "Personal Care",
+                  "Household Cleaning",
+                ]
+              : ["General Products"];
+
+          try {
+            await supabase.from("categories").insert(
+              catNames.map((name) => ({ business_id: targetId, name }))
+            );
+          } catch {}
+        }
+
+        // 2. Seed starter items
         let rpcFailed = false;
         try {
           const seedRpc = await supabase.rpc("seed_category_starter_items", {
