@@ -20,6 +20,10 @@ create table public.business_users(
 create or replace function public.is_business_member(bid uuid)
 returns boolean language sql stable security definer set search_path=public
 as $$select exists(select 1 from public.business_users where business_id=bid and user_id=auth.uid())$$;
+create or replace function public.is_business_admin(bid uuid)
+returns boolean language sql stable security definer set search_path=public
+as $$select exists(select 1 from public.business_users where business_id=bid and user_id=auth.uid() and role in('owner','admin'))$$;
+grant execute on function public.is_business_admin(uuid) to authenticated;
 create or replace function public.create_business(p_name text,p_type text,p_gstin text default null,p_state_code text default null)
 returns public.businesses language plpgsql security definer set search_path=public
 as $$declare b public.businesses;begin
@@ -93,7 +97,7 @@ alter table public.audit_logs enable row level security;
 
 create policy "member reads own businesses" on public.businesses for select to authenticated using(is_business_member(id));
 create policy "member reads own membership" on public.business_users for select to authenticated using(user_id=auth.uid());
-create policy "owner manages memberships" on public.business_users for all to authenticated using(exists(select 1 from public.business_users x where x.business_id=business_users.business_id and x.user_id=auth.uid() and x.role in('owner','admin'))) with check(exists(select 1 from public.business_users x where x.business_id=business_users.business_id and x.user_id=auth.uid() and x.role in('owner','admin')));
+create policy "owner manages memberships" on public.business_users for all to authenticated using(is_business_admin(business_id)) with check(is_business_admin(business_id));
 create policy "members read subscriptions" on public.subscriptions for select to authenticated using(is_business_member(business_id));
 create policy "members manage products" on public.products for all to authenticated using(is_business_member(business_id)) with check(is_business_member(business_id));
 create policy "members read invoices" on public.invoices for select to authenticated using(is_business_member(business_id));
