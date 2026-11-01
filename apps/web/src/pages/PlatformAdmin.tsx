@@ -331,6 +331,22 @@ export function PlatformAdmin() {
             <span className="pill" style={{ background: "#dcfce7", color: "#166534" }}>
               Super Admin Access Verified
             </span>
+            <a
+              href="https://wa.me/919884933079"
+              target="_blank"
+              rel="noreferrer"
+              className="pill"
+              style={{
+                background: "#ecfdf5",
+                color: "#047857",
+                border: "1px solid #a7f3d0",
+                textDecoration: "none",
+                fontWeight: 700,
+                fontSize: "12px",
+              }}
+            >
+              💬 WhatsApp: +91 98849 33079
+            </a>
           </div>
           <h1 style={{ margin: "2px 0 6px 0" }}>Super Admin Control Center</h1>
           <p className="muted">

@@ -147,9 +147,12 @@ export function Subscription({ businessId }: { businessId: string }) {
           <div style={{ textAlign: "right", minWidth: "180px" }}>
             <span style={{ fontSize: "12px", opacity: 0.75, display: "block" }}>Platform Owner</span>
             <strong style={{ fontSize: "15px" }}>Haridass (Platform Admin)</strong>
+            <div style={{ fontSize: "12px", opacity: 0.9, marginTop: "2px", fontWeight: 600 }}>
+              📞 +91 98849 33079
+            </div>
             <div style={{ marginTop: "8px" }}>
               <a
-                href="https://wa.me/919944747474?text=Hi%20Haridass,%20I%20would%20like%20to%20activate%20Nexus%20Creative%20Billing%20subscription"
+                href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20would%20like%20to%20activate%20Nexus%20Creative%20Billing%20subscription"
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -273,7 +276,7 @@ export function Subscription({ businessId }: { businessId: string }) {
           </div>
 
           <a
-            href="https://wa.me/919944747474?text=Hi%20Haridass,%20I%20want%20to%20activate%20Starter%20Plan%20(Rs.149/mo)%20for%20my%20business"
+            href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Starter%20Plan%20(Rs.149/mo)%20for%20my%20business"
             target="_blank"
             rel="noreferrer"
             style={{
@@ -380,7 +383,7 @@ export function Subscription({ businessId }: { businessId: string }) {
           </div>
 
           <a
-            href="https://wa.me/919944747474?text=Hi%20Haridass,%20I%20want%20to%20activate%20Business%20Plan%20(Rs.299/mo)%20for%20my%20business"
+            href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Business%20Plan%20(Rs.299/mo)%20for%20my%20business"
             target="_blank"
             rel="noreferrer"
             style={{
