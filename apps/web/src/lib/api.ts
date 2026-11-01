@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { BUSINESS_TEMPLATES } from "./businessTemplates";
 
 const rawApiUrl = import.meta.env.VITE_API_URL || "";
 // Only use external HTTP API if explicitly configured with an https URL
@@ -59,10 +60,27 @@ async function handleDirectSupabase<T>(
   if (cleanPath === "/businesses" || cleanPath === "businesses") {
     if (method === "GET") {
       if (!user) throw new Error("Authentication required");
-      const { data, error } = await supabase
+      let data: any = null;
+      let error: any = null;
+      
+      const primaryRes = await supabase
         .from("business_users")
-        .select("role,businesses(id,name,business_type,gstin,state_code)")
+        .select("role,businesses(id,name,business_type,gstin,state_code,invoice_prefix,phone,address)")
         .eq("user_id", user.id);
+      
+      data = primaryRes.data;
+      error = primaryRes.error;
+
+      if (error && error.message?.includes("column")) {
+        // Fallback for earlier database schema without new columns
+        const fallback = await supabase
+          .from("business_users")
+          .select("role,businesses(id,name,business_type,gstin,state_code)")
+          .eq("user_id", user.id);
+        data = fallback.data;
+        error = fallback.error;
+      }
+
       if (error) throw error;
       return (data || []).map((x: any) => ({
         ...x.businesses,
@@ -70,18 +88,133 @@ async function handleDirectSupabase<T>(
       })) as T;
     }
     if (method === "POST") {
-      const { data, error } = await supabase.rpc("create_business", {
+      let targetId: string | null = null;
+      let bData: any = null;
+
+      // 1. Try create_business RPC
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("create_business", {
         p_name: body.name,
         p_type: body.business_type,
         p_gstin: body.gstin || null,
         p_state_code: body.state_code || null,
       });
-      if (error) throw error;
-      return data as T;
+
+      if (!rpcErr && rpcData?.id) {
+        targetId = rpcData.id;
+        bData = rpcData;
+      } else {
+        // Fallback: direct insert with owner membership
+        const payload: any = {
+          name: body.name,
+          business_type: body.business_type,
+          gstin: body.gstin || null,
+          state_code: body.state_code || null,
+        };
+        if (body.invoice_prefix) payload.invoice_prefix = body.invoice_prefix;
+        if (body.phone) payload.phone = body.phone;
+        if (body.address) payload.address = body.address;
+
+        let res = await supabase.from("businesses").insert(payload).select().single();
+        if (res.error && res.error.message?.includes("column")) {
+          // If columns don't exist yet, insert basic columns
+          res = await supabase.from("businesses").insert({
+            name: body.name,
+            business_type: body.business_type,
+            gstin: body.gstin || null,
+            state_code: body.state_code || null,
+          }).select().single();
+        }
+        if (res.error) throw res.error;
+        targetId = res.data.id;
+        bData = res.data;
+
+        if (user && targetId) {
+          try {
+            await supabase.from("business_users").insert({
+              business_id: targetId,
+              user_id: user.id,
+              role: "owner",
+            });
+          } catch {}
+        }
+      }
+
+      // Update extra fields if available
+      if (targetId && (body.invoice_prefix || body.phone || body.address)) {
+        try {
+          await supabase
+            .from("businesses")
+            .update({
+              invoice_prefix: body.invoice_prefix || "INV",
+              phone: body.phone || null,
+              address: body.address || null,
+            })
+            .eq("id", targetId);
+        } catch {}
+      }
+
+      // Seed starter categories & items
+      if (targetId) {
+        let rpcFailed = false;
+        try {
+          const seedRpc = await supabase.rpc("seed_category_starter_items", {
+            p_business_id: targetId,
+            p_category_code: body.business_type,
+          });
+          if (seedRpc.error) rpcFailed = true;
+        } catch {
+          rpcFailed = true;
+        }
+
+        // If RPC is not available in DB yet, seed from frontend template
+        if (rpcFailed) {
+          const tmpl = BUSINESS_TEMPLATES[body.business_type];
+          if (tmpl && tmpl.starter_items.length > 0) {
+            const starterToInsert = tmpl.starter_items.map((it) => ({
+              business_id: targetId,
+              name: it.name,
+              unit: it.unit,
+              selling_price: it.selling_price,
+              gst_rate: it.gst_rate,
+              stock_qty: it.stock_qty,
+              is_active: true,
+            }));
+            try {
+              await supabase.from("products").insert(starterToInsert);
+            } catch {}
+          }
+        }
+      }
+
+      return bData as T;
     }
   }
 
-  // 2. Categories
+  // 2. Master Business Categories & Templates
+  if (
+    cleanPath === "/business-categories" ||
+    cleanPath === "business-categories"
+  ) {
+    const { data, error } = await supabase
+      .from("business_categories")
+      .select("code,name,sector,template_type,item_label,customer_label,custom_fields")
+      .eq("is_active", true)
+      .order("name");
+    if (!error && data && data.length > 0) return data as T;
+    
+    // Resilient fallback from BUSINESS_TEMPLATES master catalog
+    return Object.values(BUSINESS_TEMPLATES).map((t) => ({
+      code: t.code,
+      name: t.name,
+      sector: t.sector,
+      template_type: t.template_type,
+      item_label: t.item_label,
+      customer_label: t.customer_label,
+      custom_fields: t.custom_fields,
+    })) as unknown as T;
+  }
+
+  // 3. Categories (Tenant-specific)
   if (cleanPath === "/categories" || cleanPath === "categories") {
     if (!businessId) throw new Error("Workspace business ID required");
     if (method === "GET") {
@@ -90,7 +223,7 @@ async function handleDirectSupabase<T>(
         .select("id,name,description")
         .eq("business_id", businessId)
         .order("name");
-      if (error) throw error;
+      if (error) return [] as unknown as T;
       return data as T;
     }
     if (method === "POST") {
@@ -108,7 +241,7 @@ async function handleDirectSupabase<T>(
     }
   }
 
-  // 3. Retail Products
+  // 4. Products & Services
   if (cleanPath === "/retail/products" || cleanPath === "retail/products") {
     if (!businessId) throw new Error("Workspace business ID required");
     if (method === "GET") {
@@ -137,7 +270,7 @@ async function handleDirectSupabase<T>(
     }
   }
 
-  // 4. Bulk products
+  // 5. Bulk products
   if (
     cleanPath === "/retail/products/bulk" ||
     cleanPath === "retail/products/bulk"
@@ -166,10 +299,10 @@ async function handleDirectSupabase<T>(
     return { count: data?.length || 0, items: data } as T;
   }
 
-  // 5. Retail Invoices (GST Calculation & Atomic Stock Lock)
+  // 6. Retail & Multi-business Invoices
   if (cleanPath === "/retail/invoices" || cleanPath === "retail/invoices") {
     if (!businessId) throw new Error("Workspace business ID required");
-    const { data, error } = await supabase.rpc("create_gst_invoice", {
+    let { data, error } = await supabase.rpc("create_gst_invoice", {
       p_business_id: businessId,
       p_customer_name: body.customer_name || "Walk-in",
       p_customer_phone: body.customer_phone || null,
@@ -177,12 +310,44 @@ async function handleDirectSupabase<T>(
       p_payment_method: body.payment_method,
       p_payment_reference: body.payment_reference || null,
       p_items: body.items,
+      p_custom_fields: body.custom_fields || {},
+      p_order_type: body.order_type || "Counter Sale",
     });
+
+    // Fallback: If 9-param version is not found in schema cache, try 7-param version
+    if (error && (error.message?.includes("schema cache") || error.message?.includes("parameters"))) {
+      const fallback = await supabase.rpc("create_gst_invoice", {
+        p_business_id: businessId,
+        p_customer_name: body.customer_name || "Walk-in",
+        p_customer_phone: body.customer_phone || null,
+        p_customer_state_code: body.customer_state_code || null,
+        p_payment_method: body.payment_method,
+        p_payment_reference: body.payment_reference || null,
+        p_items: body.items,
+      });
+
+      if (!fallback.error && fallback.data) {
+        data = fallback.data;
+        error = null;
+        if (data.id && (body.custom_fields || body.order_type)) {
+          try {
+            await supabase
+              .from("invoices")
+              .update({
+                custom_fields: body.custom_fields || {},
+                order_type: body.order_type || "Counter Sale",
+              })
+              .eq("id", data.id);
+          } catch {}
+        }
+      }
+    }
+
     if (error) throw error;
     return data as T;
   }
 
-  // 6. Inventory Stock Adjustments
+  // 7. Inventory Stock Adjustments
   if (cleanPath === "/inventory/adjust" || cleanPath === "inventory/adjust") {
     if (!businessId) throw new Error("Workspace business ID required");
     const { data, error } = await supabase.rpc("adjust_stock", {
@@ -195,7 +360,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 7. Sales Reports
+  // 8. Sales Reports
   if (
     cleanPath.startsWith("/retail/reports/sales") ||
     cleanPath.startsWith("retail/reports/sales")
@@ -203,14 +368,14 @@ async function handleDirectSupabase<T>(
     if (!businessId) throw new Error("Workspace business ID required");
     const { data, error } = await supabase
       .from("invoices")
-      .select("id,invoice_number,customer_name,total,payment_method,created_at")
+      .select("id,invoice_number,customer_name,total,payment_method,created_at,custom_fields,order_type")
       .eq("business_id", businessId)
       .order("created_at", { ascending: false });
     if (error) throw error;
     return data as T;
   }
 
-  // 8. Subscriptions
+  // 9. Subscriptions
   if (cleanPath === "/subscription" || cleanPath === "subscription") {
     if (!businessId) throw new Error("Workspace business ID required");
     const { data, error } = await supabase.rpc("tenant_subscription_status", {
@@ -220,7 +385,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 9. Subscription Plans
+  // 10. Subscription Plans
   if (cleanPath === "/plans" || cleanPath === "plans") {
     const { data, error } = await supabase
       .from("subscription_plans")
@@ -233,7 +398,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 10. Customers
+  // 11. Customers
   if (cleanPath === "/customers" || cleanPath === "customers") {
     if (!businessId) throw new Error("Workspace business ID required");
     if (method === "GET") {
@@ -261,7 +426,7 @@ async function handleDirectSupabase<T>(
     }
   }
 
-  // 11. Stock Movements
+  // 12. Stock Movements
   if (
     cleanPath === "/inventory/movements" ||
     cleanPath === "inventory/movements"
@@ -279,7 +444,7 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 12. Payments
+  // 13. Payments
   if (cleanPath === "/payments" || cleanPath === "payments") {
     if (!businessId) throw new Error("Workspace business ID required");
     const { data, error } = await supabase
@@ -294,15 +459,56 @@ async function handleDirectSupabase<T>(
     return data as T;
   }
 
-  // 13. Platform Admin
+  // 14. Platform Admin
   if (
     cleanPath === "/platform/overview" ||
     cleanPath === "platform/overview"
   ) {
     const { data, error } = await supabase.rpc("platform_business_overview");
-    if (error) throw error;
-    return data as T;
+    if (!error && data) return data as T;
+
+    // Resilient fallback: build overview directly from tables if RPC is not present in schema cache
+    const [{ data: bList }, { data: subList }] = await Promise.all([
+      supabase
+        .from("businesses")
+        .select("id, name, business_type, created_at")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("subscriptions")
+        .select("*")
+        .order("created_at", { ascending: false }),
+    ]);
+
+    const businesses = (bList || []).map((b: any) => {
+      const sub = (subList || []).find((s: any) => s.business_id === b.id);
+      return {
+        id: b.id,
+        name: b.name,
+        business_type: b.business_type,
+        created_at: b.created_at,
+        owner_count: 1,
+        subscription: sub
+          ? {
+              id: sub.id,
+              plan_code: sub.plan_code,
+              status: sub.status,
+              starts_at: sub.starts_at,
+              ends_at: sub.ends_at,
+            }
+          : undefined,
+      };
+    });
+
+    const summary = {
+      businesses: businesses.length,
+      trialing: businesses.filter((b: any) => b.subscription?.status === "trialing").length,
+      active: businesses.filter((b: any) => b.subscription?.status === "active").length,
+      expired: businesses.filter((b: any) => b.subscription?.status === "expired" || b.subscription?.status === "cancelled").length,
+    };
+
+    return { summary, businesses } as unknown as T;
   }
+
   if (
     cleanPath === "/platform/subscriptions" ||
     cleanPath === "platform/subscriptions"
@@ -313,8 +519,26 @@ async function handleDirectSupabase<T>(
       p_status: body.status,
       p_period: body.period,
     });
-    if (error) throw error;
-    return data as T;
+    if (!error && data) return data as T;
+
+    // Resilient fallback: direct insert/update into subscriptions table
+    const endsAt = body.status === "active"
+      ? new Date(Date.now() + (body.period === "annual" ? 365 : 30) * 86400000).toISOString()
+      : null;
+
+    const { data: subData, error: subErr } = await supabase
+      .from("subscriptions")
+      .insert({
+        business_id: body.business_id,
+        plan_code: body.plan_code,
+        status: body.status,
+        starts_at: new Date().toISOString(),
+        ends_at: endsAt,
+      })
+      .select()
+      .single();
+    if (subErr) throw subErr;
+    return subData as T;
   }
 
   throw new Error(`Endpoint not supported: ${path}`);

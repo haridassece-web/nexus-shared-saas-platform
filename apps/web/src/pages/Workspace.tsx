@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { Link, useNavigate } from "react-router-dom";
+import { getTemplateForBusinessType } from "../lib/businessTemplates";
 
 type Biz = {
   id: string;
@@ -42,18 +43,28 @@ export function Workspace() {
       </header>
       {error && <p className="error">{error}</p>}
       <section className="business-grid">
-        {rows.map((b) => (
-          <article className="panel business-card" key={b.id}>
-            <span className="pill">{b.business_type}</span>
-            <h2>{b.name}</h2>
-            <p className="muted">
-              Role: {b.role} · GSTIN: {b.gstin || "Not added"}
-            </p>
-            <button className="primary" onClick={() => choose(b.id)}>
-              Open workspace
-            </button>
-          </article>
-        ))}
+        {rows.map((b) => {
+          const tmpl = getTemplateForBusinessType(b.business_type);
+          return (
+            <article className="panel business-card" key={b.id}>
+              <div style={{ display: "flex", gap: "6px", marginBottom: "8px" }}>
+                <span className="pill" style={{ background: "#dbeafe", color: "#1e40af" }}>
+                  {tmpl.name}
+                </span>
+                <span className="pill" style={{ background: "#f1f5f9", color: "#64748b" }}>
+                  {tmpl.sector}
+                </span>
+              </div>
+              <h2>{b.name}</h2>
+              <p className="muted">
+                Role: {b.role} · GSTIN: {b.gstin || "Not added"}
+              </p>
+              <button className="primary" onClick={() => choose(b.id)}>
+                Open workspace
+              </button>
+            </article>
+          );
+        })}
       </section>
       {!rows.length && !error && (
         <section className="panel">

@@ -1,6 +1,10 @@
 import { FormEvent, useEffect, useState, useRef } from "react";
 import { api } from "../lib/api";
 import { jsPDF } from "jspdf";
+import {
+  getTemplateForBusinessType,
+  BusinessCategoryTemplate,
+} from "../lib/businessTemplates";
 
 type Category = {
   id: string;
@@ -34,6 +38,7 @@ type Receipt = {
   payment_method: string;
   payment_reference: string;
   order_type: string;
+  custom_fields: Record<string, string>;
   items: Array<{
     name: string;
     hsn: string;
@@ -53,6 +58,17 @@ type Receipt = {
   change_due: number;
 };
 
+type PastInvoice = {
+  id: string;
+  invoice_number: string;
+  customer_name: string;
+  total: number;
+  payment_method: string;
+  created_at: string;
+  custom_fields?: Record<string, string>;
+  order_type?: string;
+};
+
 export function Retail() {
   const bid = localStorage.getItem("nexus_business_id") || "";
   const [business, setBusiness] = useState<any>(null);
@@ -60,6 +76,21 @@ export function Retail() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCat, setSelectedCat] = useState<string>("all");
   const [lines, setLines] = useState<Line[]>([]);
+  const [pastInvoices, setPastInvoices] = useState<PastInvoice[]>([]);
+
+  // Category Template & Archetype Metadata
+  const template: BusinessCategoryTemplate = getTemplateForBusinessType(
+    business?.business_type || "retail_shop"
+  );
+
+  // Dynamic Custom Template Fields
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+  const [extraCustomFields, setExtraCustomFields] = useState<
+    Array<{ key: string; label: string; value: string }>
+  >([]);
+  const [showAddCustomModal, setShowAddCustomModal] = useState(false);
+  const [newFieldKey, setNewFieldKey] = useState("");
+  const [newFieldLabel, setNewFieldLabel] = useState("");
 
   // Search & Manual Entry States
   const [searchTerm, setSearchTerm] = useState("");
@@ -99,15 +130,22 @@ export function Retail() {
   async function load() {
     if (!bid) return;
     try {
-      const [prods, cats, bizs] = await Promise.all([
-        api<Product[]>("/api/tenant/retail/products", {}, bid),
+      const [prods, cats, bizs, sales] = await Promise.all([
+        api<Product[]>("/api/tenant/retail/products", {}, bid).catch(() => []),
         api<Category[]>("/api/tenant/categories", {}, bid).catch(() => []),
         api<any[]>("/api/businesses").catch(() => []),
+        api<PastInvoice[]>("/api/tenant/retail/reports/sales", {}, bid).catch(() => []),
       ]);
       setProducts(prods || []);
       setCategories(cats || []);
+      setPastInvoices((sales || []).slice(0, 10));
       const current = (bizs || []).find((b: any) => b.id === bid);
-      if (current) setBusiness(current);
+      if (current) {
+        setBusiness(current);
+        if (current.state_code && !customerState) {
+          setCustomerState(current.state_code);
+        }
+      }
     } catch (e: any) {
       setMsg(e.message);
     }
@@ -116,6 +154,13 @@ export function Retail() {
   useEffect(() => {
     load();
   }, [bid]);
+
+  // Sync default order type when category template loads
+  useEffect(() => {
+    if (template.order_types && template.order_types.length > 0) {
+      setOrderType(template.order_types[0]);
+    }
+  }, [business?.business_type]);
 
   // Live Smart Search Filter (matches Name, SKU/Item Code, or Barcode)
   useEffect(() => {
@@ -221,12 +266,23 @@ export function Retail() {
         gst_rate: "0",
         stock_qty: "100",
       });
-      setMsg(`Product "${created.name}" added to bill.`);
+      setMsg(`Item "${created.name}" added to bill.`);
     } catch (e: any) {
       setMsg(e.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  // Add Custom Field on the fly
+  function handleAddCustomField(e: FormEvent) {
+    e.preventDefault();
+    if (!newFieldLabel.trim()) return;
+    const key = newFieldKey.trim() || newFieldLabel.toLowerCase().replace(/[^a-z0-9]/g, "_");
+    setExtraCustomFields((prev) => [...prev, { key, label: newFieldLabel.trim(), value: "" }]);
+    setNewFieldKey("");
+    setNewFieldLabel("");
+    setShowAddCustomModal(false);
   }
 
   // Tax and Totals Calculation
@@ -252,6 +308,11 @@ export function Retail() {
   const changeDue = method === "Cash" && cashNum > finalTotal ? cashNum - finalTotal : 0;
 
   async function createInvoice(): Promise<any> {
+    const combinedCustomFields: Record<string, string> = { ...customFieldValues };
+    extraCustomFields.forEach((f) => {
+      if (f.key && f.value) combinedCustomFields[f.key] = f.value;
+    });
+
     return api(
       "/api/tenant/retail/invoices",
       {
@@ -262,6 +323,8 @@ export function Retail() {
           customer_state_code: customerState || null,
           payment_method: method,
           payment_reference: paymentReference || null,
+          order_type: orderType,
+          custom_fields: combinedCustomFields,
           items: lines.map((l) => ({
             product_id: l.product.id,
             quantity: l.qty,
@@ -278,6 +341,11 @@ export function Retail() {
       business?.state_code &&
       customerState.trim() !== business.state_code.trim();
 
+    const combinedCustomFields: Record<string, string> = { ...customFieldValues };
+    extraCustomFields.forEach((f) => {
+      if (f.key && f.value) combinedCustomFields[f.key] = f.value;
+    });
+
     return {
       invoice_number: inv.invoice_number,
       date: new Date().toLocaleString("en-IN"),
@@ -287,6 +355,7 @@ export function Retail() {
       payment_method: method,
       payment_reference: paymentReference,
       order_type: orderType,
+      custom_fields: combinedCustomFields,
       items: lines.map((l) => ({
         name: l.product.name,
         hsn: l.product.hsn_code || "—",
@@ -310,61 +379,109 @@ export function Retail() {
   function downloadPdf(receipt: Receipt) {
     const pdf = new jsPDF();
     pdf.setFont("helvetica", "bold");
-    pdf.text(business?.name || "NEXUS CREATIVE RETAIL", 14, 18);
+    pdf.setFontSize(14);
+    pdf.text(business?.name || "NEXUS CREATIVE BILLING", 14, 18);
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(10);
-    if (business?.gstin) pdf.text(`GSTIN: ${business.gstin}`, 14, 24);
-    pdf.text(`Invoice: ${receipt.invoice_number}`, 14, 30);
-    pdf.text(`Date: ${receipt.date}`, 14, 36);
-    pdf.text(`Customer: ${receipt.customer_name} | ${receipt.order_type}`, 14, 42);
-    if (receipt.customer_phone) pdf.text(`Phone: ${receipt.customer_phone}`, 14, 48);
+    pdf.setFontSize(9);
+    let y = 24;
+    pdf.text(`${template.name} · ${template.sector}`, 14, y);
+    y += 5;
+    if (business?.address) {
+      pdf.text(business.address, 14, y);
+      y += 5;
+    }
+    if (business?.phone) {
+      pdf.text(`Phone: ${business.phone}`, 14, y);
+      y += 5;
+    }
+    if (business?.gstin) {
+      pdf.text(`GSTIN: ${business.gstin}`, 14, y);
+      y += 5;
+    }
 
-    let y = 58;
-    pdf.line(14, y - 4, 196, y - 4);
+    pdf.line(14, y, 196, y);
+    y += 6;
+
     pdf.setFont("helvetica", "bold");
-    pdf.text("Item", 14, y);
-    pdf.text("Qty", 110, y);
-    pdf.text("Price", 140, y);
+    pdf.text(`Invoice: ${receipt.invoice_number}`, 14, y);
+    pdf.text(`Date: ${receipt.date}`, 130, y);
+    y += 5;
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Order Type: ${receipt.order_type}`, 14, y);
+    pdf.text(`Payment: ${receipt.payment_method}`, 130, y);
+    y += 5;
+    pdf.text(`${template.customer_label}: ${receipt.customer_name}`, 14, y);
+    if (receipt.customer_phone) {
+      pdf.text(`Phone: ${receipt.customer_phone}`, 130, y);
+    }
+    y += 5;
+
+    // Render custom template fields (Doctor, Patient ID, Vehicle No, Stylist, Table No, etc.)
+    if (receipt.custom_fields && Object.keys(receipt.custom_fields).length > 0) {
+      Object.entries(receipt.custom_fields).forEach(([k, v]) => {
+        if (v) {
+          const fieldDef = template.custom_fields.find((f) => f.name === k);
+          const lbl = fieldDef?.label || k;
+          pdf.text(`${lbl}: ${v}`, 14, y);
+          y += 5;
+        }
+      });
+    }
+
+    y += 2;
+    pdf.line(14, y, 196, y);
+    y += 5;
+    pdf.setFont("helvetica", "bold");
+    pdf.text(template.item_label, 14, y);
+    pdf.text("HSN", 100, y);
+    pdf.text("Qty", 125, y);
+    pdf.text("Price", 145, y);
     pdf.text("Total", 175, y);
-    pdf.line(14, y + 2, 196, y + 2);
+    y += 2;
+    pdf.line(14, y, 196, y);
     pdf.setFont("helvetica", "normal");
 
-    y += 10;
+    y += 6;
     receipt.items.forEach((l) => {
-      pdf.text(l.name.slice(0, 32), 14, y);
-      pdf.text(String(l.qty), 110, y);
-      pdf.text(`Rs.${l.price.toFixed(2)}`, 140, y);
+      pdf.text(l.name.slice(0, 36), 14, y);
+      pdf.text(l.hsn || "—", 100, y);
+      pdf.text(String(l.qty), 125, y);
+      pdf.text(`Rs.${l.price.toFixed(2)}`, 145, y);
       pdf.text(`Rs.${l.total.toFixed(2)}`, 175, y);
-      y += 8;
+      y += 6;
     });
 
     pdf.line(14, y, 196, y);
-    y += 8;
+    y += 6;
     pdf.text(`Subtotal: Rs.${receipt.subtotal.toFixed(2)}`, 140, y);
     if (receipt.discount > 0) {
-      y += 6;
+      y += 5;
       pdf.text(`Discount: -Rs.${receipt.discount.toFixed(2)}`, 140, y);
     }
     if (receipt.cgst > 0) {
-      y += 6;
+      y += 5;
       pdf.text(`CGST: Rs.${receipt.cgst.toFixed(2)}`, 140, y);
     }
     if (receipt.sgst > 0) {
-      y += 6;
+      y += 5;
       pdf.text(`SGST: Rs.${receipt.sgst.toFixed(2)}`, 140, y);
     }
     if (receipt.igst > 0) {
-      y += 6;
+      y += 5;
       pdf.text(`IGST: Rs.${receipt.igst.toFixed(2)}`, 140, y);
     }
     if (Math.abs(receipt.round_off) > 0.001) {
-      y += 6;
-      pdf.text(`Round Off: Rs.${receipt.round_off > 0 ? "+" : ""}${receipt.round_off.toFixed(2)}`, 140, y);
+      y += 5;
+      pdf.text(
+        `Round Off: Rs.${receipt.round_off > 0 ? "+" : ""}${receipt.round_off.toFixed(2)}`,
+        140,
+        y
+      );
     }
-    y += 8;
+    y += 6;
     pdf.setFont("helvetica", "bold");
     pdf.text(`Grand Total: Rs.${receipt.total.toFixed(2)}`, 140, y);
-    pdf.save(`${receipt.invoice_number}.pdf`);
+    pdf.save(`${receipt.invoice_number.replace(/\//g, "-")}.pdf`);
   }
 
   // 1. Save and Print Bill
@@ -412,22 +529,55 @@ export function Retail() {
     }
   }
 
-  function whatsapp() {
-    if (!phone) {
-      setMsg("Enter customer phone with country code (e.g. 919876543210)");
-      return;
-    }
-    const tot = activeReceipt ? activeReceipt.total : finalTotal;
-    const invNo = activeReceipt ? activeReceipt.invoice_number : "Recent";
-    const msgText = `Hello ${customer || "Valued Customer"},\nThank you for shopping at ${business?.name || "Nexus Mart"}.\nYour invoice #${invNo} total is Rs.${tot.toFixed(2)}.\nPayment Mode: ${method}.\nHave a wonderful day!`;
-    window.open(
-      `https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(msgText)}`,
-      "_blank"
-    );
+  // 3. Share on WhatsApp
+  function shareOnWhatsApp(targetReceipt?: Receipt) {
+    const rec = targetReceipt || activeReceipt;
+    const destPhone = (rec?.customer_phone || phone || "").replace(/\D/g, "");
+    const cleanPhone = destPhone.length === 10 ? `91${destPhone}` : destPhone;
+
+    let text = `*${business?.name || "NEXUS INVOICE"}*\n`;
+    text += `*Sector:* ${template.name} (${template.sector})\n`;
+    text += `*Invoice:* ${rec ? rec.invoice_number : "Recent"}\n`;
+    text += `*Date:* ${rec ? rec.date : new Date().toLocaleDateString()}\n`;
+    text += `*${template.customer_label}:* ${rec ? rec.customer_name : customer}\n`;
+
+    const cFields = rec?.custom_fields || customFieldValues;
+    Object.entries(cFields).forEach(([k, v]) => {
+      if (v) {
+        const fieldDef = template.custom_fields.find((f) => f.name === k);
+        const lbl = fieldDef?.label || k;
+        text += `*${lbl}:* ${v}\n`;
+      }
+    });
+
+    text += `-----------------------------\n`;
+    const itemsList = rec
+      ? rec.items
+      : lines.map((l) => ({
+          name: l.product.name,
+          qty: l.qty,
+          total: Number(l.product.selling_price) * l.qty,
+        }));
+    itemsList.forEach((it) => {
+      text += `${it.name} x ${it.qty} = Rs. ${Number(it.total).toFixed(2)}\n`;
+    });
+    text += `-----------------------------\n`;
+    const grand = rec ? rec.total : finalTotal;
+    text += `*Total Amount:* Rs. ${grand.toFixed(2)}\n`;
+    text += `*Payment Mode:* ${rec ? rec.payment_method : method}\n\n`;
+    text += `Thank you for choosing ${business?.name || "us"}!`;
+
+    const url = cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank");
   }
 
   function resetBill() {
-    if (lines.length > 0 && !window.confirm("Are you sure you want to clear current items from this bill?")) {
+    if (
+      lines.length > 0 &&
+      !window.confirm("Are you sure you want to clear current items from this bill?")
+    ) {
       return;
     }
     setLines([]);
@@ -435,6 +585,8 @@ export function Retail() {
     setCashTendered("");
     setCustomer("Walk-in");
     setPhone("");
+    setCustomFieldValues({});
+    setExtraCustomFields([]);
     setMsg("");
   }
 
@@ -447,10 +599,18 @@ export function Retail() {
     <>
       <header className="page-head no-print">
         <div>
-          <p className="eyebrow">SMART POS & RETAIL BILLING</p>
-          <h1>Retail billing & checkout</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+            <span className="pill" style={{ background: "#dbeafe", color: "#1e40af", fontWeight: 700 }}>
+              {template.sector}
+            </span>
+            <span className="pill" style={{ background: "#f1f5f9", color: "#475569" }}>
+              {template.name} Template
+            </span>
+          </div>
+          <h1>{business?.name || "Nexus Business Billing"}</h1>
           <p className="muted">
-            {business?.name ? `Store: ${business.name}` : `Business ID: ${bid}`} · Cashier Terminal
+            {business?.invoice_prefix ? `Prefix: ${business.invoice_prefix} · ` : ""}
+            Financial Year Sequence · Isolated Workspace
           </p>
         </div>
         <div style={{ display: "flex", gap: "8px" }}>
@@ -476,7 +636,13 @@ export function Retail() {
       {showQuickAddModal && (
         <div className="modal-overlay no-print">
           <div className="modal-content">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
               <h2>➕ Quick Add Custom / Unlisted Item</h2>
               <button
                 className="secondary"
@@ -488,20 +654,24 @@ export function Retail() {
             </div>
             <form onSubmit={handleQuickAddProduct} style={{ marginTop: "1rem" }}>
               <label>
-                Item Name *
+                {template.item_label} Name *
                 <input
                   required
-                  placeholder="e.g. Cotton Shopping Bag"
+                  placeholder={`e.g. ${template.starter_items[0]?.name || "Consultation Fee"}`}
                   value={quickForm.name}
-                  onChange={(e) => setQuickForm({ ...quickForm, name: e.target.value })}
+                  onChange={(e) =>
+                    setQuickForm({ ...quickForm, name: e.target.value })
+                  }
                 />
               </label>
               <label>
                 Item Code / SKU (optional)
                 <input
-                  placeholder="e.g. BAG-01"
+                  placeholder="e.g. SRV-01"
                   value={quickForm.sku}
-                  onChange={(e) => setQuickForm({ ...quickForm, sku: e.target.value })}
+                  onChange={(e) =>
+                    setQuickForm({ ...quickForm, sku: e.target.value })
+                  }
                 />
               </label>
               <label>
@@ -509,28 +679,43 @@ export function Retail() {
                 <input
                   placeholder="e.g. 890123000001"
                   value={quickForm.barcode}
-                  onChange={(e) => setQuickForm({ ...quickForm, barcode: e.target.value })}
+                  onChange={(e) =>
+                    setQuickForm({ ...quickForm, barcode: e.target.value })
+                  }
                 />
               </label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "8px",
+                }}
+              >
                 <label>
                   Selling Price ₹ *
                   <input
                     required
                     type="number"
                     step="any"
-                    placeholder="20"
+                    placeholder="500"
                     value={quickForm.selling_price}
-                    onChange={(e) => setQuickForm({ ...quickForm, selling_price: e.target.value })}
+                    onChange={(e) =>
+                      setQuickForm({
+                        ...quickForm,
+                        selling_price: e.target.value,
+                      })
+                    }
                   />
                 </label>
                 <label>
                   GST Rate %
                   <select
                     value={quickForm.gst_rate}
-                    onChange={(e) => setQuickForm({ ...quickForm, gst_rate: e.target.value })}
+                    onChange={(e) =>
+                      setQuickForm({ ...quickForm, gst_rate: e.target.value })
+                    }
                   >
-                    <option value="0">0%</option>
+                    <option value="0">0% (Exempt)</option>
                     <option value="5">5%</option>
                     <option value="12">12%</option>
                     <option value="18">18%</option>
@@ -538,8 +723,58 @@ export function Retail() {
                   </select>
                 </label>
               </div>
-              <button className="primary full" disabled={busy} style={{ marginTop: "1rem" }}>
+              <button
+                className="primary full"
+                disabled={busy}
+                style={{ marginTop: "1rem" }}
+              >
                 {busy ? "Saving…" : "Save & Add to Bill"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Custom Field Modal */}
+      {showAddCustomModal && (
+        <div className="modal-overlay no-print">
+          <div className="modal-content">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <h2>➕ Add Custom Invoice Field</h2>
+              <button
+                className="secondary"
+                style={{ margin: 0, padding: "4px 8px" }}
+                onClick={() => setShowAddCustomModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleAddCustomField} style={{ marginTop: "1rem" }}>
+              <label>
+                Field Label (e.g. Discount Coupon, Delivery Boy, Bed Number) *
+                <input
+                  required
+                  placeholder="e.g. Bed Number"
+                  value={newFieldLabel}
+                  onChange={(e) => setNewFieldLabel(e.target.value)}
+                />
+              </label>
+              <label>
+                Field Identifier / Key (optional)
+                <input
+                  placeholder="e.g. bed_number"
+                  value={newFieldKey}
+                  onChange={(e) => setNewFieldKey(e.target.value)}
+                />
+              </label>
+              <button className="primary full" style={{ marginTop: "1rem" }}>
+                Add Field
               </button>
             </form>
           </div>
@@ -550,7 +785,13 @@ export function Retail() {
       {activeReceipt && (
         <div className="modal-overlay no-print">
           <div className="modal-content">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
               <h2>🧾 Bill Receipt Generated</h2>
               <button
                 className="secondary"
@@ -563,24 +804,64 @@ export function Retail() {
 
             {/* Receipt Preview */}
             <div className="thermal-receipt">
-              <div className="center biz-title">{business?.name || "NEXUS STORE"}</div>
-              {business?.address && <div className="center">{business.address}</div>}
-              {business?.gstin && <div className="center">GSTIN: {business.gstin}</div>}
-              <div className="divider" />
-              <div><b>Invoice:</b> {activeReceipt.invoice_number}</div>
-              <div><b>Date:</b> {activeReceipt.date}</div>
-              <div><b>Type:</b> {activeReceipt.order_type}</div>
-              <div><b>Customer:</b> {activeReceipt.customer_name}</div>
-              {activeReceipt.customer_phone && (
-                <div><b>Phone:</b> {activeReceipt.customer_phone}</div>
+              <div className="center biz-title">
+                {business?.name || "NEXUS CREATIVE"}
+              </div>
+              <div className="center" style={{ fontSize: "11px", color: "#64748b" }}>
+                {template.name} ({template.sector})
+              </div>
+              {business?.address && (
+                <div className="center">{business.address}</div>
               )}
-              <div><b>Payment:</b> {activeReceipt.payment_method}</div>
+              {business?.phone && (
+                <div className="center">Phone: {business.phone}</div>
+              )}
+              {business?.gstin && (
+                <div className="center">GSTIN: {business.gstin}</div>
+              )}
+              <div className="divider" />
+              <div>
+                <b>Invoice:</b> {activeReceipt.invoice_number}
+              </div>
+              <div>
+                <b>Date:</b> {activeReceipt.date}
+              </div>
+              <div>
+                <b>Order Type:</b> {activeReceipt.order_type}
+              </div>
+              <div>
+                <b>{template.customer_label}:</b> {activeReceipt.customer_name}
+              </div>
+              {activeReceipt.customer_phone && (
+                <div>
+                  <b>Phone:</b> {activeReceipt.customer_phone}
+                </div>
+              )}
+
+              {/* Custom Fields in Receipt */}
+              {activeReceipt.custom_fields &&
+                Object.entries(activeReceipt.custom_fields).map(([k, v]) => {
+                  if (!v) return null;
+                  const fieldDef = template.custom_fields.find(
+                    (f) => f.name === k
+                  );
+                  const lbl = fieldDef?.label || k;
+                  return (
+                    <div key={k}>
+                      <b>{lbl}:</b> {v}
+                    </div>
+                  );
+                })}
+
+              <div>
+                <b>Payment:</b> {activeReceipt.payment_method}
+              </div>
               <div className="divider" />
 
               <table>
                 <thead>
                   <tr>
-                    <th>Item</th>
+                    <th>{template.item_label}</th>
                     <th style={{ textAlign: "center" }}>Qty</th>
                     <th style={{ textAlign: "right" }}>Price</th>
                     <th style={{ textAlign: "right" }}>Total</th>
@@ -591,8 +872,12 @@ export function Retail() {
                     <tr key={idx}>
                       <td>{it.name}</td>
                       <td style={{ textAlign: "center" }}>{it.qty}</td>
-                      <td style={{ textAlign: "right" }}>₹{it.price.toFixed(2)}</td>
-                      <td style={{ textAlign: "right" }}>₹{it.total.toFixed(2)}</td>
+                      <td style={{ textAlign: "right" }}>
+                        ₹{it.price.toFixed(2)}
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        ₹{it.total.toFixed(2)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -630,7 +915,10 @@ export function Retail() {
               {Math.abs(activeReceipt.round_off) > 0.001 && (
                 <div className="summary-row">
                   <span>Round Off</span>
-                  <span>{activeReceipt.round_off > 0 ? "+" : ""}₹{activeReceipt.round_off.toFixed(2)}</span>
+                  <span>
+                    {activeReceipt.round_off > 0 ? "+" : ""}₹
+                    {activeReceipt.round_off.toFixed(2)}
+                  </span>
                 </div>
               )}
               <div className="divider" />
@@ -661,9 +949,15 @@ export function Retail() {
                 style={{ background: "#059669", fontSize: "16px" }}
                 onClick={() => window.print()}
               >
-                🖨️ Print Bill Now
+                🖨️ Print Bill Receipt (80mm)
               </button>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "8px",
+                }}
+              >
                 <button
                   className="secondary"
                   style={{ margin: 0 }}
@@ -674,9 +968,9 @@ export function Retail() {
                 <button
                   className="secondary"
                   style={{ margin: 0, color: "#16a34a" }}
-                  onClick={whatsapp}
+                  onClick={() => shareOnWhatsApp(activeReceipt)}
                 >
-                  💬 WhatsApp
+                  💬 Share WhatsApp
                 </button>
               </div>
               <button
@@ -694,24 +988,63 @@ export function Retail() {
       {/* Hidden printable receipt for window.print() */}
       {activeReceipt && (
         <div id="printable-receipt" className="thermal-receipt">
-          <div className="center biz-title">{business?.name || "NEXUS STORE"}</div>
-          {business?.address && <div className="center">{business.address}</div>}
-          {business?.gstin && <div className="center">GSTIN: {business.gstin}</div>}
-          <div className="divider" />
-          <div><b>Invoice:</b> {activeReceipt.invoice_number}</div>
-          <div><b>Date:</b> {activeReceipt.date}</div>
-          <div><b>Type:</b> {activeReceipt.order_type}</div>
-          <div><b>Customer:</b> {activeReceipt.customer_name}</div>
-          {activeReceipt.customer_phone && (
-            <div><b>Phone:</b> {activeReceipt.customer_phone}</div>
+          <div className="center biz-title">
+            {business?.name || "NEXUS CREATIVE"}
+          </div>
+          <div className="center" style={{ fontSize: "11px" }}>
+            {template.name} ({template.sector})
+          </div>
+          {business?.address && (
+            <div className="center">{business.address}</div>
           )}
-          <div><b>Payment:</b> {activeReceipt.payment_method}</div>
+          {business?.phone && (
+            <div className="center">Phone: {business.phone}</div>
+          )}
+          {business?.gstin && (
+            <div className="center">GSTIN: {business.gstin}</div>
+          )}
+          <div className="divider" />
+          <div>
+            <b>Invoice:</b> {activeReceipt.invoice_number}
+          </div>
+          <div>
+            <b>Date:</b> {activeReceipt.date}
+          </div>
+          <div>
+            <b>Order Type:</b> {activeReceipt.order_type}
+          </div>
+          <div>
+            <b>{template.customer_label}:</b> {activeReceipt.customer_name}
+          </div>
+          {activeReceipt.customer_phone && (
+            <div>
+              <b>Phone:</b> {activeReceipt.customer_phone}
+            </div>
+          )}
+
+          {activeReceipt.custom_fields &&
+            Object.entries(activeReceipt.custom_fields).map(([k, v]) => {
+              if (!v) return null;
+              const fieldDef = template.custom_fields.find(
+                (f) => f.name === k
+              );
+              const lbl = fieldDef?.label || k;
+              return (
+                <div key={k}>
+                  <b>{lbl}:</b> {v}
+                </div>
+              );
+            })}
+
+          <div>
+            <b>Payment:</b> {activeReceipt.payment_method}
+          </div>
           <div className="divider" />
 
           <table>
             <thead>
               <tr>
-                <th>Item</th>
+                <th>{template.item_label}</th>
                 <th style={{ textAlign: "center" }}>Qty</th>
                 <th style={{ textAlign: "right" }}>Price</th>
                 <th style={{ textAlign: "right" }}>Total</th>
@@ -735,7 +1068,7 @@ export function Retail() {
             <span>₹{activeReceipt.subtotal.toFixed(2)}</span>
           </div>
           {activeReceipt.discount > 0 && (
-            <div className="summary-row" style={{ color: "#b91c1c" }}>
+            <div className="summary-row">
               <span>Discount</span>
               <span>-₹{activeReceipt.discount.toFixed(2)}</span>
             </div>
@@ -761,7 +1094,10 @@ export function Retail() {
           {Math.abs(activeReceipt.round_off) > 0.001 && (
             <div className="summary-row">
               <span>Round Off</span>
-              <span>{activeReceipt.round_off > 0 ? "+" : ""}₹{activeReceipt.round_off.toFixed(2)}</span>
+              <span>
+                {activeReceipt.round_off > 0 ? "+" : ""}₹
+                {activeReceipt.round_off.toFixed(2)}
+              </span>
             </div>
           )}
           <div className="divider" />
@@ -796,7 +1132,7 @@ export function Retail() {
               <input
                 ref={searchInputRef}
                 autoFocus
-                placeholder="🔍 Search Product Name, SKU / Item Code, or Scan Barcode..."
+                placeholder={`🔍 Search ${template.item_label}, SKU, or Scan Barcode...`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -823,8 +1159,14 @@ export function Retail() {
                       </small>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <span className="item-price">₹{Number(p.selling_price).toFixed(2)}</span>
-                      <small style={{ color: p.stock_qty < 5 ? "#ef4444" : "#10b981" }}>
+                      <span className="item-price">
+                        ₹{Number(p.selling_price).toFixed(2)}
+                      </span>
+                      <small
+                        style={{
+                          color: p.stock_qty < 5 ? "#ef4444" : "#10b981",
+                        }}
+                      >
                         Stock: {p.stock_qty}
                       </small>
                     </div>
@@ -841,7 +1183,7 @@ export function Retail() {
               value={selectedManualId}
               onChange={(e) => setSelectedManualId(e.target.value)}
             >
-              <option value="">-- Or Pick Product from List --</option>
+              <option value="">-- Or Pick {template.item_label} from List --</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name} {p.sku ? `(${p.sku})` : ""} — ₹{p.selling_price} (Stock: {p.stock_qty})
@@ -913,52 +1255,79 @@ export function Retail() {
                 onClick={() => addProductToCart(p, 1)}
               >
                 <b>{p.name}</b>
-                {p.sku && <small style={{ color: "#64748b" }}>Code: {p.sku}</small>}
+                {p.sku && (
+                  <small style={{ color: "#64748b" }}>Code: {p.sku}</small>
+                )}
                 <span>₹{Number(p.selling_price).toFixed(2)}</span>
                 <small>Stock {p.stock_qty}</small>
               </button>
             ))}
             {!displayedProducts.length && (
               <p className="muted" style={{ padding: "1rem" }}>
-                No products found in this category.
+                No items found. Click "+ Quick Add Item" above to add your first item.
               </p>
             )}
           </div>
         </section>
 
-        {/* Right Column: Bill Details, Cart Controls & Payment */}
+        {/* Right Column: Bill Details, Template Custom Fields & Payment */}
         <section className="panel">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
             <h2>Current bill ({lines.length} items)</h2>
-            <span className="pill" style={{ background: "#e0f2fe", color: "#0369a1" }}>
+            <span
+              className="pill"
+              style={{ background: "#e0f2fe", color: "#0369a1" }}
+            >
               {orderType}
             </span>
           </div>
 
           {/* Customer & Order Settings */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "8px",
+            }}
+          >
             <label>
-              Customer Name
+              {template.customer_label} *
               <input
                 value={customer}
-                placeholder="Walk-in"
+                placeholder={`e.g. John Doe / Walk-in`}
                 onChange={(e) => setCustomer(e.target.value)}
               />
             </label>
             <label>
               Order Type
-              <select value={orderType} onChange={(e) => setOrderType(e.target.value)}>
-                <option>Counter Sale</option>
-                <option>Takeaway</option>
-                <option>Home Delivery</option>
-                <option>Wholesale</option>
+              <select
+                value={orderType}
+                onChange={(e) => setOrderType(e.target.value)}
+              >
+                {template.order_types.map((ot) => (
+                  <option key={ot} value={ot}>
+                    {ot}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "8px" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.2fr 0.8fr",
+              gap: "8px",
+            }}
+          >
             <label>
-              WhatsApp Number
+              WhatsApp / Phone Number
               <input
                 placeholder="e.g. 919876543210"
                 value={phone}
@@ -966,7 +1335,7 @@ export function Retail() {
               />
             </label>
             <label>
-              Customer State Code
+              Place of Supply (State Code)
               <input
                 placeholder="e.g. 33"
                 maxLength={2}
@@ -976,11 +1345,101 @@ export function Retail() {
             </label>
           </div>
 
+          {/* Archetype Template Custom Fields (Doctor, Patient ID, Vehicle No, Stylist, Table No, etc.) */}
+          {(template.custom_fields.length > 0 || extraCustomFields.length > 0) && (
+            <div
+              style={{
+                marginTop: "8px",
+                padding: "10px",
+                background: "#f0fdf4",
+                borderRadius: "8px",
+                border: "1px solid #bbf7d0",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "6px",
+                }}
+              >
+                <small style={{ fontWeight: 700, color: "#166534" }}>
+                  📋 {template.name} Details
+                </small>
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{
+                    padding: "2px 6px",
+                    fontSize: "11px",
+                    margin: 0,
+                    background: "#fff",
+                  }}
+                  onClick={() => setShowAddCustomModal(true)}
+                >
+                  + Add Custom Field
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "6px",
+                }}
+              >
+                {template.custom_fields.map((f) => (
+                  <label key={f.name} style={{ margin: 0, fontSize: "12px" }}>
+                    {f.label}
+                    <input
+                      style={{ padding: "6px", fontSize: "13px" }}
+                      placeholder={f.placeholder || f.label}
+                      value={customFieldValues[f.name] || ""}
+                      onChange={(e) =>
+                        setCustomFieldValues({
+                          ...customFieldValues,
+                          [f.name]: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+
+                {/* Extra on-the-fly custom fields */}
+                {extraCustomFields.map((f, idx) => (
+                  <label key={idx} style={{ margin: 0, fontSize: "12px" }}>
+                    {f.label}
+                    <input
+                      style={{ padding: "6px", fontSize: "13px" }}
+                      value={f.value}
+                      placeholder={f.label}
+                      onChange={(e) => {
+                        const updated = [...extraCustomFields];
+                        updated[idx].value = e.target.value;
+                        setExtraCustomFields(updated);
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Cart Table with Editable Quantity Stepper */}
-          <div style={{ borderTop: "1px solid #e2e8f0", marginTop: "10px", paddingTop: "8px" }}>
+          <div
+            style={{
+              borderTop: "1px solid #e2e8f0",
+              marginTop: "10px",
+              paddingTop: "8px",
+            }}
+          >
             {lines.length === 0 && (
-              <p className="muted" style={{ textAlign: "center", padding: "1.5rem" }}>
-                Cart is empty. Scan barcode or type product name/item code above.
+              <p
+                className="muted"
+                style={{ textAlign: "center", padding: "1.5rem" }}
+              >
+                Cart is empty. Scan barcode or type {template.item_label.toLowerCase()} name above.
               </p>
             )}
 
@@ -996,29 +1455,47 @@ export function Retail() {
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0, paddingRight: "8px" }}>
-                  <div style={{ fontWeight: 600, fontSize: "13px" }}>{l.product.name}</div>
+                  <div style={{ fontWeight: 600, fontSize: "13px" }}>
+                    {l.product.name}
+                  </div>
                   <small style={{ color: "#64748b" }}>
                     ₹{Number(l.product.selling_price).toFixed(2)} each · GST {l.product.gst_rate}%
                   </small>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
                   <div className="qty-stepper">
-                    <button type="button" onClick={() => updateQty(l.product.id, l.qty - 1)}>
+                    <button
+                      type="button"
+                      onClick={() => updateQty(l.product.id, l.qty - 1)}
+                    >
                       −
                     </button>
                     <input
                       type="number"
                       min={1}
                       value={l.qty}
-                      onChange={(e) => updateQty(l.product.id, Number(e.target.value) || 1)}
+                      onChange={(e) =>
+                        updateQty(l.product.id, Number(e.target.value) || 1)
+                      }
                     />
-                    <button type="button" onClick={() => updateQty(l.product.id, l.qty + 1)}>
+                    <button
+                      type="button"
+                      onClick={() => updateQty(l.product.id, l.qty + 1)}
+                    >
                       +
                     </button>
                   </div>
 
-                  <span style={{ fontWeight: 700, width: "65px", textAlign: "right" }}>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      width: "65px",
+                      textAlign: "right",
+                    }}
+                  >
                     ₹{(Number(l.product.selling_price) * l.qty).toFixed(2)}
                   </span>
 
@@ -1043,8 +1520,22 @@ export function Retail() {
 
           {/* Bill-Related Adjustments & Options */}
           {lines.length > 0 && (
-            <div style={{ marginTop: "12px", background: "#f8fafc", padding: "12px", borderRadius: "8px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", alignItems: "center" }}>
+            <div
+              style={{
+                marginTop: "12px",
+                background: "#f8fafc",
+                padding: "12px",
+                borderRadius: "8px",
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "8px",
+                  alignItems: "center",
+                }}
+              >
                 <label style={{ margin: 0 }}>
                   Bill Discount (₹)
                   <input
@@ -1056,7 +1547,16 @@ export function Retail() {
                   />
                 </label>
 
-                <label style={{ margin: 0, display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", marginTop: "18px" }}>
+                <label
+                  style={{
+                    margin: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    cursor: "pointer",
+                    marginTop: "18px",
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={autoRoundOff}
@@ -1067,14 +1567,25 @@ export function Retail() {
               </div>
 
               {/* Payment Mode Selector */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "8px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "8px",
+                  marginTop: "8px",
+                }}
+              >
                 <label style={{ margin: 0 }}>
                   Payment Mode
-                  <select value={method} onChange={(e) => setMethod(e.target.value)}>
+                  <select
+                    value={method}
+                    onChange={(e) => setMethod(e.target.value)}
+                  >
                     <option>UPI</option>
                     <option>Cash</option>
                     <option>Card</option>
                     <option>Bank transfer</option>
+                    <option>Credit / Pay Later</option>
                   </select>
                 </label>
 
@@ -1137,28 +1648,136 @@ export function Retail() {
           {/* Action buttons */}
           <button
             className="primary full"
-            style={{ background: "#059669", fontSize: "16px", marginBottom: "8px" }}
+            style={{
+              background: "#059669",
+              fontSize: "16px",
+              marginBottom: "8px",
+            }}
             disabled={busy || !lines.length}
             onClick={saveAndPrint}
           >
-            {busy ? "Processing…" : "🖨️ Save & Print Bill"}
+            {busy ? "Processing…" : "🖨️ Save & Print Bill Receipt"}
           </button>
 
-          <button
-            className="primary full"
-            disabled={busy || !lines.length}
-            onClick={saveAndDownload}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "8px",
+              marginBottom: "8px",
+            }}
           >
-            {busy ? "Saving…" : "📥 Save & Download PDF"}
-          </button>
+            <button
+              className="primary"
+              style={{ margin: 0 }}
+              disabled={busy || !lines.length}
+              onClick={saveAndDownload}
+            >
+              {busy ? "Saving…" : "📥 Save & PDF"}
+            </button>
 
-          <button className="secondary full" onClick={whatsapp}>
-            💬 WhatsApp invoice message
-          </button>
+            <button
+              className="secondary"
+              style={{ margin: 0, color: "#16a34a", fontWeight: 700 }}
+              onClick={() => shareOnWhatsApp()}
+            >
+              💬 WhatsApp Share
+            </button>
+          </div>
 
-          {msg && <p className="muted" style={{ marginTop: "8px" }}>{msg}</p>}
+          {msg && (
+            <p className="muted" style={{ marginTop: "8px" }}>
+              {msg}
+            </p>
+          )}
         </section>
       </div>
+
+      {/* Past Invoices & Re-print History */}
+      {pastInvoices.length > 0 && (
+        <section className="panel no-print" style={{ marginTop: "1.5rem" }}>
+          <h2>Recent Invoices & Past Bills</h2>
+          <p className="muted">
+            Quickly re-print thermal receipts or download invoices for past customer orders.
+          </p>
+          <div className="tablewrap" style={{ marginTop: "1rem" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice #</th>
+                  <th>Customer</th>
+                  <th>Type</th>
+                  <th>Date</th>
+                  <th>Payment</th>
+                  <th>Total</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pastInvoices.map((inv) => (
+                  <tr key={inv.id}>
+                    <td>
+                      <b>{inv.invoice_number}</b>
+                    </td>
+                    <td>{inv.customer_name}</td>
+                    <td>
+                      <span className="pill">{inv.order_type || "Sale"}</span>
+                    </td>
+                    <td>{new Date(inv.created_at).toLocaleDateString("en-IN")}</td>
+                    <td>{inv.payment_method}</td>
+                    <td>
+                      <b>₹{Number(inv.total).toFixed(2)}</b>
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button
+                          type="button"
+                          className="secondary"
+                          style={{ padding: "4px 8px", fontSize: "12px", margin: 0 }}
+                          onClick={() => {
+                            setActiveReceipt({
+                              invoice_number: inv.invoice_number,
+                              date: new Date(inv.created_at).toLocaleString("en-IN"),
+                              customer_name: inv.customer_name,
+                              customer_phone: "",
+                              customer_state: "",
+                              payment_method: inv.payment_method,
+                              payment_reference: "",
+                              order_type: inv.order_type || "Sale",
+                              custom_fields: inv.custom_fields || {},
+                              items: [
+                                {
+                                  name: "Recorded Line Items",
+                                  hsn: "—",
+                                  qty: 1,
+                                  price: Number(inv.total),
+                                  total: Number(inv.total),
+                                  gst_rate: 0,
+                                },
+                              ],
+                              subtotal: Number(inv.total),
+                              discount: 0,
+                              cgst: 0,
+                              sgst: 0,
+                              igst: 0,
+                              round_off: 0,
+                              total: Number(inv.total),
+                              cash_tendered: 0,
+                              change_due: 0,
+                            });
+                          }}
+                        >
+                          🖨️ View / Print
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </>
   );
 }
