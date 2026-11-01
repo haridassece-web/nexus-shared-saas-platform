@@ -19,10 +19,14 @@
   border-radius: 16px;
   max-width: 480px;
   width: 100%;
-  max-height: 90vh;
+  max-height: 92vh;
   overflow-y: auto;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
   padding: 24px;
+  transition: max-width 0.2s ease;
+}
+.modal-content.a4-preview-mode {
+  max-width: 840px;
 }
 .thermal-receipt {
   font-family: 'Courier New', Courier, monospace;
@@ -79,6 +83,109 @@
   padding: 6px 0;
 }
 
+/* Standard A4 Tax Invoice Styles */
+.a4-invoice {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1e293b;
+  background: #ffffff;
+  padding: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  margin: 16px 0;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+}
+.a4-invoice .a4-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #0f172a;
+  margin-bottom: 16px;
+}
+.a4-invoice .a4-brand-name {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+.a4-invoice .a4-tagline {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.a4-invoice .a4-meta-box {
+  text-align: right;
+}
+.a4-invoice .a4-invoice-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.a4-invoice .a4-bill-to-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  background: #f8fafc;
+  padding: 14px 18px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 18px;
+  font-size: 13px;
+}
+.a4-invoice table.a4-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 18px;
+  font-size: 13px;
+}
+.a4-invoice table.a4-table th {
+  background: #0f172a;
+  color: #ffffff;
+  padding: 10px 12px;
+  font-weight: 700;
+  text-align: left;
+  border: 1px solid #0f172a;
+}
+.a4-invoice table.a4-table td {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+}
+.a4-invoice .a4-totals-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+.a4-invoice .a4-totals-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.a4-invoice .a4-totals-table td {
+  padding: 5px 8px;
+  border: none;
+  font-size: 13px;
+}
+.a4-invoice .a4-grand-row {
+  border-top: 2px solid #0f172a !important;
+  border-bottom: 2px solid #0f172a !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  background: #f8fafc;
+}
+.a4-invoice .a4-footer-sign {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 12px;
+}
+
 @media print {
   body * {
     visibility: hidden;
@@ -86,7 +193,12 @@
   #printable-receipt, #printable-receipt * {
     visibility: visible;
   }
-  #printable-receipt {
+  .sidebar, .page-head, .modal-overlay, button, .no-print {
+    display: none !important;
+  }
+
+  /* 80mm POS Thermal Slip Print */
+  #printable-receipt.print-80mm {
     position: absolute;
     left: 0;
     top: 0;
@@ -97,8 +209,19 @@
     font-size: 12px;
     box-shadow: none !important;
   }
-  .sidebar, .page-head, .modal-overlay, button, .no-print {
-    display: none !important;
+
+  /* A4 Standard Sheet Invoice Print */
+  #printable-receipt.print-a4 {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 10mm 14mm;
+    border: none !important;
+    font-size: 13px;
+    box-shadow: none !important;
   }
 }
 

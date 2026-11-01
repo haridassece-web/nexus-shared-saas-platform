@@ -45,3 +45,4 @@ on conflict (code) do update set
   max_products = excluded.max_products,
   features = excluded.features,
   is_active = true;
+
