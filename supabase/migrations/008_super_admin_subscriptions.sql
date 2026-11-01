@@ -48,6 +48,9 @@ create policy "platform admin manages businesses" on public.businesses
   for all to authenticated using (public.is_platform_admin()) with check (public.is_platform_admin());
 
 -- 4. Super Admin Add / Modify / Extend Subscription RPC
+drop function if exists public.platform_set_subscription(uuid, text, text, text);
+drop function if exists public.platform_set_subscription(uuid, text, text, text, timestamptz);
+
 create or replace function public.platform_set_subscription(
   p_business_id uuid,
   p_plan_code text,

@@ -82,3 +82,4 @@ begin
   return to_jsonb(v_biz);
 end $$;
 grant execute on function public.update_business_branding to authenticated;
+
