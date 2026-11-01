@@ -101,3 +101,85 @@
     display: none !important;
   }
 }
+
+/* Enhanced POS & Manual Billing Styles */
+.smart-search-wrap {
+  position: relative;
+  margin-bottom: 12px;
+}
+.search-results-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+}
+.search-result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f5f9;
+}
+.search-result-item:hover {
+  background: #f8fafc;
+}
+.search-result-item b {
+  color: #1e293b;
+}
+.search-result-item small {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+}
+.search-result-item .item-price {
+  font-weight: 700;
+  color: #2563eb;
+}
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.qty-stepper button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.qty-stepper input {
+  width: 44px;
+  text-align: center;
+  padding: 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+}
+.cash-calculator {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.change-due {
+  font-size: 16px;
+  font-weight: 800;
+  color: #15803d;
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+}
