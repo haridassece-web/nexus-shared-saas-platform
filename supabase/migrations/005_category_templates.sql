@@ -92,3 +92,4 @@ begin
     perform public.seed_business_categories(b.id, b.business_type);
   end loop;
 end $$;
+
