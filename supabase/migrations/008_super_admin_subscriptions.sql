@@ -229,3 +229,4 @@ begin
   return result;
 end $$;
 grant execute on function public.platform_business_overview() to authenticated;
+

@@ -378,28 +378,70 @@ export function Retail() {
 
   function downloadPdf(receipt: Receipt) {
     const pdf = new jsPDF();
+    const brandColor = business?.brand_color || "#2563eb";
+    const brandName = business?.brand_name || business?.name || "TAX INVOICE";
+    const showLogo = business?.show_logo ?? true;
+    const showContact = business?.show_contact ?? true;
+    const showGstin = business?.show_gstin ?? true;
+    const footerMsg = business?.invoice_footer || "Thank you for your business!";
+    const isWhiteLabel =
+      business?.branding_mode === "white_label" ||
+      business?.show_platform_branding === false;
+
+    // Convert hex color to rgb
+    let r = 37, g = 99, b = 235;
+    if (brandColor.startsWith("#") && brandColor.length === 7) {
+      r = parseInt(brandColor.slice(1, 3), 16) || 37;
+      g = parseInt(brandColor.slice(3, 5), 16) || 99;
+      b = parseInt(brandColor.slice(5, 7), 16) || 235;
+    }
+
+    let y = 18;
+
+    // Embed business logo if present
+    if (showLogo && business?.logo_url) {
+      try {
+        pdf.addImage(business.logo_url, "PNG", 14, 10, 35, 16);
+        y = 30;
+      } catch {
+        // Continue gracefully if image format fails
+      }
+    }
+
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(14);
-    pdf.text(business?.name || "NEXUS CREATIVE BILLING", 14, 18);
+    pdf.setFontSize(15);
+    pdf.setTextColor(r, g, b);
+    pdf.text(brandName, 14, y);
+    pdf.setTextColor(30, 41, 59);
+
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(9);
-    let y = 24;
+    y += 5;
     pdf.text(`${template.name} · ${template.sector}`, 14, y);
     y += 5;
-    if (business?.address) {
-      pdf.text(business.address, 14, y);
-      y += 5;
+
+    if (showContact) {
+      if (business?.address) {
+        pdf.text(business.address, 14, y);
+        y += 5;
+      }
+      if (business?.phone) {
+        pdf.text(`Phone: ${business.phone}`, 14, y);
+        y += 5;
+      }
     }
-    if (business?.phone) {
-      pdf.text(`Phone: ${business.phone}`, 14, y);
-      y += 5;
-    }
-    if (business?.gstin) {
+
+    if (showGstin && business?.gstin) {
       pdf.text(`GSTIN: ${business.gstin}`, 14, y);
       y += 5;
     }
 
+    // Color banner line
+    pdf.setDrawColor(r, g, b);
+    pdf.setLineWidth(0.8);
     pdf.line(14, y, 196, y);
+    pdf.setLineWidth(0.2);
+    pdf.setDrawColor(200, 200, 200);
     y += 6;
 
     pdf.setFont("helvetica", "bold");
@@ -432,11 +474,13 @@ export function Retail() {
     pdf.line(14, y, 196, y);
     y += 5;
     pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(r, g, b);
     pdf.text(template.item_label, 14, y);
     pdf.text("HSN", 100, y);
     pdf.text("Qty", 125, y);
     pdf.text("Price", 145, y);
     pdf.text("Total", 175, y);
+    pdf.setTextColor(30, 41, 59);
     y += 2;
     pdf.line(14, y, 196, y);
     pdf.setFont("helvetica", "normal");
@@ -480,7 +524,23 @@ export function Retail() {
     }
     y += 6;
     pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(r, g, b);
     pdf.text(`Grand Total: Rs.${receipt.total.toFixed(2)}`, 140, y);
+    pdf.setTextColor(30, 41, 59);
+
+    // Custom footer message
+    y += 12;
+    pdf.setFont("helvetica", "italic");
+    pdf.setFontSize(9);
+    pdf.text(footerMsg, 14, y);
+
+    if (!isWhiteLabel) {
+      y += 5;
+      pdf.setFontSize(8);
+      pdf.setTextColor(150, 150, 150);
+      pdf.text("Powered by Nexus Creative SaaS Platform", 14, y);
+    }
+
     pdf.save(`${receipt.invoice_number.replace(/\//g, "-")}.pdf`);
   }
 
@@ -534,8 +594,13 @@ export function Retail() {
     const rec = targetReceipt || activeReceipt;
     const destPhone = (rec?.customer_phone || phone || "").replace(/\D/g, "");
     const cleanPhone = destPhone.length === 10 ? `91${destPhone}` : destPhone;
+    const brandName = business?.brand_name || business?.name || "INVOICE";
+    const footerMsg = business?.invoice_footer || "Thank you for choosing us!";
+    const isWhiteLabel =
+      business?.branding_mode === "white_label" ||
+      business?.show_platform_branding === false;
 
-    let text = `*${business?.name || "NEXUS INVOICE"}*\n`;
+    let text = `*${brandName.toUpperCase()}*\n`;
     text += `*Sector:* ${template.name} (${template.sector})\n`;
     text += `*Invoice:* ${rec ? rec.invoice_number : "Recent"}\n`;
     text += `*Date:* ${rec ? rec.date : new Date().toLocaleDateString()}\n`;
@@ -565,7 +630,11 @@ export function Retail() {
     const grand = rec ? rec.total : finalTotal;
     text += `*Total Amount:* Rs. ${grand.toFixed(2)}\n`;
     text += `*Payment Mode:* ${rec ? rec.payment_method : method}\n\n`;
-    text += `Thank you for choosing ${business?.name || "us"}!`;
+    text += `${footerMsg}`;
+
+    if (!isWhiteLabel) {
+      text += `\n_Powered by Nexus Creative_`;
+    }
 
     const url = cleanPhone
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
@@ -804,19 +873,31 @@ export function Retail() {
 
             {/* Receipt Preview */}
             <div className="thermal-receipt">
-              <div className="center biz-title">
-                {business?.name || "NEXUS CREATIVE"}
+              {(business?.show_logo ?? true) && business?.logo_url && (
+                <div className="center" style={{ marginBottom: "8px" }}>
+                  <img
+                    src={business.logo_url}
+                    alt={business.brand_name || business.name}
+                    style={{ maxHeight: "48px", maxWidth: "160px", objectFit: "contain" }}
+                  />
+                </div>
+              )}
+              <div
+                className="center biz-title"
+                style={{ color: business?.brand_color || undefined }}
+              >
+                {business?.brand_name || business?.name || "NEXUS CREATIVE"}
               </div>
               <div className="center" style={{ fontSize: "11px", color: "#64748b" }}>
                 {template.name} ({template.sector})
               </div>
-              {business?.address && (
+              {(business?.show_contact ?? true) && business?.address && (
                 <div className="center">{business.address}</div>
               )}
-              {business?.phone && (
+              {(business?.show_contact ?? true) && business?.phone && (
                 <div className="center">Phone: {business.phone}</div>
               )}
-              {business?.gstin && (
+              {(business?.show_gstin ?? true) && business?.gstin && (
                 <div className="center">GSTIN: {business.gstin}</div>
               )}
               <div className="divider" />
@@ -939,7 +1020,18 @@ export function Retail() {
                 </>
               )}
               <div className="double-divider" />
-              <div className="center">*** THANK YOU FOR VISITING ***</div>
+              <div className="center">
+                {business?.invoice_footer || "*** THANK YOU FOR VISITING ***"}
+              </div>
+              {(business?.show_platform_branding ?? true) &&
+                business?.branding_mode !== "white_label" && (
+                  <div
+                    className="center"
+                    style={{ fontSize: "9px", color: "#94a3b8", marginTop: "4px" }}
+                  >
+                    ⚡ Powered by Nexus Creative Platform
+                  </div>
+                )}
             </div>
 
             {/* Modal action buttons */}
@@ -988,19 +1080,31 @@ export function Retail() {
       {/* Hidden printable receipt for window.print() */}
       {activeReceipt && (
         <div id="printable-receipt" className="thermal-receipt">
-          <div className="center biz-title">
-            {business?.name || "NEXUS CREATIVE"}
+          {(business?.show_logo ?? true) && business?.logo_url && (
+            <div className="center" style={{ marginBottom: "6px" }}>
+              <img
+                src={business.logo_url}
+                alt={business.brand_name || business.name}
+                style={{ maxHeight: "44px", maxWidth: "150px", objectFit: "contain" }}
+              />
+            </div>
+          )}
+          <div
+            className="center biz-title"
+            style={{ color: business?.brand_color || undefined }}
+          >
+            {business?.brand_name || business?.name || "NEXUS CREATIVE"}
           </div>
           <div className="center" style={{ fontSize: "11px" }}>
             {template.name} ({template.sector})
           </div>
-          {business?.address && (
+          {(business?.show_contact ?? true) && business?.address && (
             <div className="center">{business.address}</div>
           )}
-          {business?.phone && (
+          {(business?.show_contact ?? true) && business?.phone && (
             <div className="center">Phone: {business.phone}</div>
           )}
-          {business?.gstin && (
+          {(business?.show_gstin ?? true) && business?.gstin && (
             <div className="center">GSTIN: {business.gstin}</div>
           )}
           <div className="divider" />
@@ -1118,7 +1222,18 @@ export function Retail() {
             </>
           )}
           <div className="double-divider" />
-          <div className="center">*** THANK YOU FOR VISITING ***</div>
+          <div className="center">
+            {business?.invoice_footer || "*** THANK YOU FOR VISITING ***"}
+          </div>
+          {(business?.show_platform_branding ?? true) &&
+            business?.branding_mode !== "white_label" && (
+              <div
+                className="center"
+                style={{ fontSize: "9px", color: "#94a3b8", marginTop: "4px" }}
+              >
+                ⚡ Powered by Nexus Creative Platform
+              </div>
+            )}
         </div>
       )}
 

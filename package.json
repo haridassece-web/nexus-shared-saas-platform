@@ -7,9 +7,10 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
-    "build": "npm run build -w apps/api",
-    "start": "npm start -w apps/api",
+    "build": "npm run build -w apps/web",
+    "build:web": "npm run build -w apps/web",
     "build:api": "npm run build -w apps/api",
+    "start": "npm start -w apps/api",
     "start:api": "npm start -w apps/api"
   },
   "dependencies": {

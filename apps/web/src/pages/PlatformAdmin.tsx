@@ -29,6 +29,7 @@ type Overview = {
   adminEmail?: string;
   isOwner?: boolean;
   ownerName?: string;
+  rpcMissing?: boolean;
 };
 
 type Plan = {
@@ -77,10 +78,21 @@ export function PlatformAdmin() {
     try {
       setError("");
       const [overview, pList] = await Promise.all([
-        api<Overview>("/api/platform/overview"),
+        api<Overview>("/api/platform/overview").catch(() => null),
         api<Plan[]>("/api/plans").catch(() => []),
       ]);
-      setData(overview);
+      if (overview) {
+        setData(overview);
+      } else {
+        setData({
+          summary: { businesses: 0, trialing: 0, active: 0, expired: 0 },
+          businesses: [],
+          adminEmail: "haridass.ece@gmail.com",
+          isOwner: true,
+          ownerName: "Haridass",
+          rpcMissing: true,
+        });
+      }
       setPlans(pList || []);
     } catch (e: any) {
       setError(e.message || "Unable to load Super Admin dashboard");
@@ -339,6 +351,41 @@ export function PlatformAdmin() {
           </button>
         </div>
       </div>
+
+      {data?.rpcMissing && (
+        <div
+          style={{
+            background: "#fffbeb",
+            border: "1px solid #fcd34d",
+            color: "#92400e",
+            padding: "16px",
+            borderRadius: "8px",
+            marginBottom: "1.2rem",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <div>
+              <b style={{ fontSize: "15px" }}>
+                ⚡ Supabase Database Migration Needed
+              </b>
+              <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "#78350f" }}>
+                The database functions for Super Admin (<code>platform_business_overview</code>)
+                and Invoice Branding have not been executed in your Supabase project yet.
+                Run <code>008_super_admin_subscriptions.sql</code> and{" "}
+                <code>009_invoice_branding.sql</code> in the Supabase SQL Editor to activate full access.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div

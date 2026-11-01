@@ -65,7 +65,7 @@ async function handleDirectSupabase<T>(
       
       const primaryRes = await supabase
         .from("business_users")
-        .select("role,businesses(id,name,business_type,gstin,state_code,invoice_prefix,phone,address)")
+        .select("role,businesses(*)")
         .eq("user_id", user.id);
       
       data = primaryRes.data;
@@ -187,6 +187,66 @@ async function handleDirectSupabase<T>(
       }
 
       return bData as T;
+    }
+
+    if (method === "PATCH" || method === "PUT") {
+      const targetBizId = businessId || body.business_id || body.id;
+      if (!targetBizId) throw new Error("Business ID required to update business");
+
+      const updateData: any = {};
+      [
+        "name", "brand_name", "logo_url", "brand_color", "invoice_footer",
+        "show_logo", "show_contact", "show_gstin", "show_platform_branding",
+        "invoice_template", "branding_mode", "phone", "address", "gstin", "invoice_prefix"
+      ].forEach((field) => {
+        if (body[field] !== undefined) updateData[field] = body[field];
+      });
+
+      const { data, error } = await supabase
+        .from("businesses")
+        .update(updateData)
+        .eq("id", targetBizId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data as T;
+    }
+  }
+
+  // 1b. Branding Endpoint
+  if (cleanPath === "/branding" || cleanPath === "branding") {
+    const targetBizId = businessId || body.business_id;
+    if (!targetBizId) throw new Error("Business ID required for branding");
+
+    if (method === "GET") {
+      const { data, error } = await supabase
+        .from("businesses")
+        .select("*")
+        .eq("id", targetBizId)
+        .single();
+      if (error) throw error;
+      return data as T;
+    }
+
+    if (method === "PATCH" || method === "POST" || method === "PUT") {
+      const updateData: any = {};
+      [
+        "name", "brand_name", "logo_url", "brand_color", "invoice_footer",
+        "show_logo", "show_contact", "show_gstin", "show_platform_branding",
+        "invoice_template", "branding_mode", "phone", "address", "gstin", "invoice_prefix"
+      ].forEach((field) => {
+        if (body[field] !== undefined) updateData[field] = body[field];
+      });
+
+      const { data, error } = await supabase
+        .from("businesses")
+        .update(updateData)
+        .eq("id", targetBizId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as T;
     }
   }
 
@@ -465,23 +525,36 @@ async function handleDirectSupabase<T>(
     cleanPath === "platform/overview"
   ) {
     let overviewData: any = null;
+    let rpcMissing = false;
     try {
       const { data, error } = await supabase.rpc("platform_business_overview");
-      if (!error && data) overviewData = data;
-    } catch {}
+      if (!error && data) {
+        overviewData = data;
+      } else {
+        rpcMissing = true;
+      }
+    } catch {
+      rpcMissing = true;
+    }
 
     if (!overviewData) {
       // Resilient fallback: build overview directly from tables
-      const [{ data: bList }, { data: subList }] = await Promise.all([
-        supabase
-          .from("businesses")
-          .select("id, name, business_type, invoice_prefix, created_at")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("subscriptions")
-          .select("*")
-          .order("created_at", { ascending: false }),
-      ]);
+      let bList: any[] = [];
+      let subList: any[] = [];
+      try {
+        const [bRes, subRes] = await Promise.all([
+          supabase
+            .from("businesses")
+            .select("id, name, business_type, invoice_prefix, created_at")
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("subscriptions")
+            .select("*")
+            .order("created_at", { ascending: false }),
+        ]);
+        if (bRes.data) bList = bRes.data;
+        if (subRes.data) subList = subRes.data;
+      } catch {}
 
       const businesses = (bList || []).map((b: any) => {
         const sub = (subList || []).find((s: any) => s.business_id === b.id);
@@ -531,6 +604,7 @@ async function handleDirectSupabase<T>(
       adminEmail: user?.email || "haridass.ece@gmail.com",
       isOwner: isOwner || true, // Haridass is always recognized as Super Admin
       ownerName: "Haridass",
+      rpcMissing,
     } as unknown as T;
   }
 
