@@ -68,8 +68,8 @@ export function PlatformAdmin() {
   const [planForm, setPlanForm] = useState({
     code: "",
     name: "",
-    monthly_price: "149",
-    annual_price: "1490",
+    monthly_price: "299",
+    annual_price: "2990",
     max_users: "5",
     max_products: "1000",
   });

@@ -245,11 +245,11 @@ export function Subscription({ businessId }: { businessId: string }) {
 
             <div style={{ margin: "16px 0", borderBottom: "1px solid #f1f5f9", paddingBottom: "16px" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: "4px" }}>
-                <span style={{ fontSize: "32px", fontWeight: 800, color: "#0f172a" }}>₹149</span>
+                <span style={{ fontSize: "32px", fontWeight: 800, color: "#0f172a" }}>₹299</span>
                 <span className="muted" style={{ fontSize: "14px" }}>/ month</span>
               </div>
               <small className="muted" style={{ display: "block", marginTop: "4px" }}>
-                or ₹1,490 / year (save ₹298 on annual billing)
+                or ₹2,990 / year (save ₹598 on annual billing)
               </small>
             </div>
 
@@ -276,7 +276,7 @@ export function Subscription({ businessId }: { businessId: string }) {
           </div>
 
           <a
-            href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Starter%20Plan%20(Rs.149/mo)%20for%20my%20business"
+            href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Starter%20Plan%20(Rs.299/mo)%20for%20my%20business"
             target="_blank"
             rel="noreferrer"
             style={{
@@ -291,7 +291,7 @@ export function Subscription({ businessId }: { businessId: string }) {
               fontSize: "14px",
             }}
           >
-            {activePlanCode === "starter" ? "Active Plan" : "Choose Starter (₹149/mo)"}
+            {activePlanCode === "starter" ? "Active Plan" : "Choose Starter (₹299/mo)"}
           </a>
         </div>
 
@@ -349,11 +349,11 @@ export function Subscription({ businessId }: { businessId: string }) {
 
             <div style={{ margin: "16px 0", borderBottom: "1px solid #f1f5f9", paddingBottom: "16px" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: "4px" }}>
-                <span style={{ fontSize: "32px", fontWeight: 800, color: "#059669" }}>₹299</span>
+                <span style={{ fontSize: "32px", fontWeight: 800, color: "#059669" }}>₹499</span>
                 <span className="muted" style={{ fontSize: "14px" }}>/ month</span>
               </div>
               <small className="muted" style={{ display: "block", marginTop: "4px" }}>
-                or ₹2,990 / year (save ₹598 on annual billing)
+                or ₹4,990 / year (save ₹998 on annual billing)
               </small>
             </div>
 
@@ -383,7 +383,7 @@ export function Subscription({ businessId }: { businessId: string }) {
           </div>
 
           <a
-            href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Business%20Plan%20(Rs.299/mo)%20for%20my%20business"
+            href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Business%20Plan%20(Rs.499/mo)%20for%20my%20business"
             target="_blank"
             rel="noreferrer"
             style={{
@@ -398,7 +398,7 @@ export function Subscription({ businessId }: { businessId: string }) {
               fontSize: "14px",
             }}
           >
-            {activePlanCode === "business" ? "Active Plan" : "Choose Business (₹299/mo)"}
+            {activePlanCode === "business" ? "Active Plan" : "Choose Business (₹499/mo)"}
           </a>
         </div>
 

@@ -519,8 +519,8 @@ async function handleDirectSupabase<T>(
         {
           code: "starter",
           name: "Starter",
-          monthly_price_paise: 14900,
-          annual_price_paise: 149000,
+          monthly_price_paise: 29900,
+          annual_price_paise: 299000,
           max_users: 2,
           max_products: 1000,
           features: { description: "Small shops", target_audience: "Small shops" },
@@ -528,8 +528,8 @@ async function handleDirectSupabase<T>(
         {
           code: "business",
           name: "Business",
-          monthly_price_paise: 29900,
-          annual_price_paise: 299000,
+          monthly_price_paise: 49900,
+          annual_price_paise: 499000,
           max_users: 10,
           max_products: 10000,
           features: {

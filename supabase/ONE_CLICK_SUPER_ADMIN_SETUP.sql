@@ -240,14 +240,14 @@ begin
 end $$;
 grant execute on function public.platform_business_overview() to authenticated, anon;
 
--- 10. Update Subscription Pricing: Starter at Rs.149/mo, Business at Rs.299/mo
+-- 10. Update Subscription Pricing: Starter at Rs.299/mo, Business at Rs.499/mo
 insert into public.subscription_plans (
   code, name, monthly_price_paise, annual_price_paise, max_users, max_products, features, is_active
 ) values (
   'starter',
   'Starter',
-  14900,
-  149000,
+  29900,
+  299000,
   2,
   1000,
   '{"description":"Small shops","target_audience":"Small shops","gst_billing":true,"inventory":true,"pdf_invoice":true,"whatsapp_share":true,"thermal_print":true,"barcode_scanner":true,"reports":true}'::jsonb,
@@ -255,8 +255,8 @@ insert into public.subscription_plans (
 ), (
   'business',
   'Business',
-  29900,
-  299000,
+  49900,
+  499000,
   10,
   10000,
   '{"description":"Retail and service businesses","target_audience":"Retail and service businesses","gst_billing":true,"inventory":true,"pdf_invoice":true,"whatsapp_share":true,"thermal_print":true,"barcode_scanner":true,"reports":true,"advanced_reports":true,"custom_branding":true,"white_label":true,"priority_support":true}'::jsonb,
