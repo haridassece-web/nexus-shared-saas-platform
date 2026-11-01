@@ -16,7 +16,13 @@ export function Login() {
       const result =
         mode === "login"
           ? await supabase.auth.signInWithPassword({ email, password })
-          : await supabase.auth.signUp({ email, password });
+          : await supabase.auth.signUp({
+              email,
+              password,
+              options: {
+                emailRedirectTo: `${window.location.origin}/`,
+              },
+            });
       if (result.error) throw result.error;
       if (mode === "register" && !result.data.session) {
         setError("Registration received. Check your email to confirm, then sign in.");
