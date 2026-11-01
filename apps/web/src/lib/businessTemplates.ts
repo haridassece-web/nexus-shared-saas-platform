@@ -1202,3 +1202,4 @@ export function getTemplateForBusinessType(type: string): BusinessCategoryTempla
     name: type || "Retail Shop",
   };
 }
+
