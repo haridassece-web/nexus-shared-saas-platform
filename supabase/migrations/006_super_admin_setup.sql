@@ -105,3 +105,4 @@ grant execute on function public.platform_set_subscription(uuid, text, text, tex
 insert into public.platform_admins (user_id)
 select id from auth.users
 on conflict (user_id) do nothing;
+
