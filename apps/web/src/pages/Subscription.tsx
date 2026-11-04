@@ -150,7 +150,24 @@ export function Subscription({ businessId }: { businessId: string }) {
             <div style={{ fontSize: "12px", opacity: 0.9, marginTop: "2px", fontWeight: 600 }}>
               📞 +91 98849 33079
             </div>
-            <div style={{ marginTop: "8px" }}>
+            <div style={{ marginTop: "8px", display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <a
+                href="https://rzp.io/rzp/kXDafwpr"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: "inline-block",
+                  background: "#0284c7",
+                  color: "white",
+                  textDecoration: "none",
+                  padding: "8px 14px",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                }}
+              >
+                💳 Pay Online
+              </a>
               <a
                 href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20would%20like%20to%20activate%20Nexus%20Creative%20Billing%20subscription"
                 target="_blank"
@@ -273,26 +290,52 @@ export function Subscription({ businessId }: { businessId: string }) {
                 <span style={{ color: "#16a34a", fontWeight: 800 }}>✓</span> Real-time Daily Sales & Payment Reports
               </li>
             </ul>
+
+            <div style={{ marginTop: "12px", padding: "6px 10px", background: "#f8fafc", borderRadius: "6px", fontSize: "11px", color: "#64748b", border: "1px solid #e2e8f0" }}>
+              <b>Razorpay Plan ID:</b> <code style={{ color: "#2563eb", fontWeight: 700 }}>plan_Tw2uea5q2C97dI</code>
+            </div>
           </div>
 
-          <a
-            href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Starter%20Plan%20(Rs.299/mo)%20for%20my%20business"
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              display: "block",
-              textAlign: "center",
-              background: activePlanCode === "starter" ? "#f1f5f9" : "#2563eb",
-              color: activePlanCode === "starter" ? "#475569" : "white",
-              textDecoration: "none",
-              padding: "12px",
-              borderRadius: "8px",
-              fontWeight: 700,
-              fontSize: "14px",
-            }}
-          >
-            {activePlanCode === "starter" ? "Active Plan" : "Choose Starter (₹299/mo)"}
-          </a>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "16px" }}>
+            <a
+              href="https://rzp.io/rzp/kXDafwpr"
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: "block",
+                textAlign: "center",
+                background: "#2563eb",
+                color: "white",
+                textDecoration: "none",
+                padding: "12px",
+                borderRadius: "8px",
+                fontWeight: 700,
+                fontSize: "14px",
+                boxShadow: "0 2px 6px rgba(37,99,235,0.2)",
+              }}
+            >
+              💳 Pay ₹299 Online (Razorpay)
+            </a>
+            <a
+              href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Starter%20Plan%20(Rs.299/mo,%20Plan%20ID:%20plan_Tw2uea5q2C97dI)%20for%20my%20business"
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: "block",
+                textAlign: "center",
+                background: "#f1f5f9",
+                color: "#334155",
+                border: "1px solid #cbd5e1",
+                textDecoration: "none",
+                padding: "9px 12px",
+                borderRadius: "8px",
+                fontWeight: 600,
+                fontSize: "13px",
+              }}
+            >
+              💬 Activate via WhatsApp (Haridass)
+            </a>
+          </div>
         </div>
 
         {/* Plan 2: Business (Featured) */}
@@ -380,26 +423,52 @@ export function Subscription({ businessId }: { businessId: string }) {
                 <span style={{ color: "#16a34a", fontWeight: 800 }}>✓</span> Priority WhatsApp & Phone Support
               </li>
             </ul>
+
+            <div style={{ marginTop: "12px", padding: "6px 10px", background: "#f0fdf4", borderRadius: "6px", fontSize: "11px", color: "#166534", border: "1px solid #bbf7d0" }}>
+              <b>Razorpay Plan ID:</b> <code style={{ color: "#059669", fontWeight: 700 }}>plan_Tw2vdOPvPKxnSZ</code>
+            </div>
           </div>
 
-          <a
-            href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Business%20Plan%20(Rs.499/mo)%20for%20my%20business"
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              display: "block",
-              textAlign: "center",
-              background: "#059669",
-              color: "white",
-              textDecoration: "none",
-              padding: "12px",
-              borderRadius: "8px",
-              fontWeight: 700,
-              fontSize: "14px",
-            }}
-          >
-            {activePlanCode === "business" ? "Active Plan" : "Choose Business (₹499/mo)"}
-          </a>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "16px" }}>
+            <a
+              href="https://rzp.io/rzp/kXDafwpr"
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: "block",
+                textAlign: "center",
+                background: "#059669",
+                color: "white",
+                textDecoration: "none",
+                padding: "12px",
+                borderRadius: "8px",
+                fontWeight: 700,
+                fontSize: "14px",
+                boxShadow: "0 2px 6px rgba(5,150,105,0.2)",
+              }}
+            >
+              💳 Pay ₹499 Online (Razorpay)
+            </a>
+            <a
+              href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Business%20Plan%20(Rs.499/mo,%20Plan%20ID:%20plan_Tw2vdOPvPKxnSZ)%20for%20my%20business"
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: "block",
+                textAlign: "center",
+                background: "#f1f5f9",
+                color: "#334155",
+                border: "1px solid #cbd5e1",
+                textDecoration: "none",
+                padding: "9px 12px",
+                borderRadius: "8px",
+                fontWeight: 600,
+                fontSize: "13px",
+              }}
+            >
+              💬 Activate via WhatsApp (Haridass)
+            </a>
+          </div>
         </div>
 
         {/* Plan 3: 14-Day Free Trial */}
@@ -472,6 +541,54 @@ export function Subscription({ businessId }: { businessId: string }) {
             Auto-activated on workspace setup
           </div>
         </div>
+      </div>
+
+      {/* Razorpay Trust & Security Banner */}
+      <div
+        style={{
+          marginTop: "2rem",
+          background: "linear-gradient(135deg, #f8fafc, #edf2f7)",
+          border: "1px solid #cbd5e1",
+          borderRadius: "14px",
+          padding: "20px 24px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "16px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+          <span style={{ fontSize: "32px" }}>🔒</span>
+          <div>
+            <b style={{ fontSize: "15px", color: "#0f172a" }}>
+              100% Secure Instant Payments Powered by Razorpay
+            </b>
+            <p style={{ margin: "3px 0 0 0", fontSize: "13px", color: "#64748b" }}>
+              Secure checkout supporting UPI (Google Pay, PhonePe, Paytm, BHIM), Credit/Debit Cards, and Netbanking.
+            </p>
+          </div>
+        </div>
+
+        <a
+          href="https://rzp.io/rzp/kXDafwpr"
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            background: "#0284c7",
+            color: "white",
+            padding: "10px 20px",
+            borderRadius: "8px",
+            fontWeight: 700,
+            fontSize: "14px",
+            textDecoration: "none",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+          }}
+        >
+          💳 Open Razorpay Checkout ↗
+        </a>
       </div>
     </section>
   );

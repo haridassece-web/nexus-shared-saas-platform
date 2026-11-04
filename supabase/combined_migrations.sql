@@ -1428,6 +1428,29 @@ on conflict (code) do update set
   features = excluded.features,
   is_active = true;
 
+
+-- Migration 012: Link Razorpay Online Payment & Subscription Plans
+-- Payment Link: https://rzp.io/rzp/kXDafwpr
+-- Starter Plan: plan_Tw2uea5q2C97dI (₹299/mo)
+-- Business Plan: plan_Tw2vdOPvPKxnSZ (₹499/mo)
+
+update public.subscription_plans
+set features = coalesce(features, '{}'::jsonb) || jsonb_build_object(
+  'razorpay_plan_id', 'plan_Tw2uea5q2C97dI',
+  'payment_link', 'https://rzp.io/rzp/kXDafwpr'
+)
+where code = 'starter';
+
+update public.subscription_plans
+set features = coalesce(features, '{}'::jsonb) || jsonb_build_object(
+  'razorpay_plan_id', 'plan_Tw2vdOPvPKxnSZ',
+  'payment_link', 'https://rzp.io/rzp/kXDafwpr'
+)
+where code = 'business';
+
+notify pgrst, 'reload schema';
+
+
 -- 2. Upsert Business Plan (₹499/month · Retail and service businesses)
 insert into public.subscription_plans (
   code, name, monthly_price_paise, annual_price_paise, max_users, max_products, features, is_active
@@ -1449,3 +1472,26 @@ on conflict (code) do update set
   max_products = excluded.max_products,
   features = excluded.features,
   is_active = true;
+
+
+-- Migration 012: Link Razorpay Online Payment & Subscription Plans
+-- Payment Link: https://rzp.io/rzp/kXDafwpr
+-- Starter Plan: plan_Tw2uea5q2C97dI (₹299/mo)
+-- Business Plan: plan_Tw2vdOPvPKxnSZ (₹499/mo)
+
+update public.subscription_plans
+set features = coalesce(features, '{}'::jsonb) || jsonb_build_object(
+  'razorpay_plan_id', 'plan_Tw2uea5q2C97dI',
+  'payment_link', 'https://rzp.io/rzp/kXDafwpr'
+)
+where code = 'starter';
+
+update public.subscription_plans
+set features = coalesce(features, '{}'::jsonb) || jsonb_build_object(
+  'razorpay_plan_id', 'plan_Tw2vdOPvPKxnSZ',
+  'payment_link', 'https://rzp.io/rzp/kXDafwpr'
+)
+where code = 'business';
+
+notify pgrst, 'reload schema';
+

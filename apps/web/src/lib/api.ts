@@ -523,7 +523,12 @@ async function handleDirectSupabase<T>(
           annual_price_paise: 299000,
           max_users: 2,
           max_products: 1000,
-          features: { description: "Small shops", target_audience: "Small shops" },
+          features: {
+            description: "Small shops",
+            target_audience: "Small shops",
+            razorpay_plan_id: "plan_Tw2uea5q2C97dI",
+            payment_link: "https://rzp.io/rzp/kXDafwpr",
+          },
         },
         {
           code: "business",
@@ -537,6 +542,8 @@ async function handleDirectSupabase<T>(
             target_audience: "Retail and service businesses",
             custom_branding: true,
             white_label: true,
+            razorpay_plan_id: "plan_Tw2vdOPvPKxnSZ",
+            payment_link: "https://rzp.io/rzp/kXDafwpr",
           },
         },
       ];

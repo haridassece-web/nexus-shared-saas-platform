@@ -347,6 +347,22 @@ export function PlatformAdmin() {
             >
               💬 WhatsApp: +91 98849 33079
             </a>
+            <a
+              href="https://rzp.io/rzp/kXDafwpr"
+              target="_blank"
+              rel="noreferrer"
+              className="pill"
+              style={{
+                background: "#e0f2fe",
+                color: "#0369a1",
+                border: "1px solid #bae6fd",
+                textDecoration: "none",
+                fontWeight: 700,
+                fontSize: "12px",
+              }}
+            >
+              💳 Razorpay Gateway
+            </a>
           </div>
           <h1 style={{ margin: "2px 0 6px 0" }}>Super Admin Control Center</h1>
           <p className="muted">
@@ -717,6 +733,11 @@ export function PlatformAdmin() {
                     <tr key={p.code}>
                       <td>
                         <code>{p.code}</code>
+                        {(p.features?.razorpay_plan_id || (p.code === "starter" ? "plan_Tw2uea5q2C97dI" : p.code === "business" ? "plan_Tw2vdOPvPKxnSZ" : null)) && (
+                          <div style={{ marginTop: "4px", fontSize: "11px", color: "#64748b" }}>
+                            Razorpay: <code style={{ color: "#0284c7" }}>{p.features?.razorpay_plan_id || (p.code === "starter" ? "plan_Tw2uea5q2C97dI" : "plan_Tw2vdOPvPKxnSZ")}</code>
+                          </div>
+                        )}
                       </td>
                       <td>
                         <b>{p.name}</b>

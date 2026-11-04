@@ -240,7 +240,7 @@ begin
 end $$;
 grant execute on function public.platform_business_overview() to authenticated, anon;
 
--- 10. Update Subscription Pricing: Starter at Rs.299/mo, Business at Rs.499/mo
+-- 10. Update Subscription Pricing & Razorpay Plans: Starter at Rs.299/mo, Business at Rs.499/mo
 insert into public.subscription_plans (
   code, name, monthly_price_paise, annual_price_paise, max_users, max_products, features, is_active
 ) values (
@@ -250,7 +250,7 @@ insert into public.subscription_plans (
   299000,
   2,
   1000,
-  '{"description":"Small shops","target_audience":"Small shops","gst_billing":true,"inventory":true,"pdf_invoice":true,"whatsapp_share":true,"thermal_print":true,"barcode_scanner":true,"reports":true}'::jsonb,
+  '{"description":"Small shops","target_audience":"Small shops","gst_billing":true,"inventory":true,"pdf_invoice":true,"whatsapp_share":true,"thermal_print":true,"barcode_scanner":true,"reports":true,"razorpay_plan_id":"plan_Tw2uea5q2C97dI","payment_link":"https://rzp.io/rzp/kXDafwpr"}'::jsonb,
   true
 ), (
   'business',
@@ -259,7 +259,7 @@ insert into public.subscription_plans (
   499000,
   10,
   10000,
-  '{"description":"Retail and service businesses","target_audience":"Retail and service businesses","gst_billing":true,"inventory":true,"pdf_invoice":true,"whatsapp_share":true,"thermal_print":true,"barcode_scanner":true,"reports":true,"advanced_reports":true,"custom_branding":true,"white_label":true,"priority_support":true}'::jsonb,
+  '{"description":"Retail and service businesses","target_audience":"Retail and service businesses","gst_billing":true,"inventory":true,"pdf_invoice":true,"whatsapp_share":true,"thermal_print":true,"barcode_scanner":true,"reports":true,"advanced_reports":true,"custom_branding":true,"white_label":true,"priority_support":true,"razorpay_plan_id":"plan_Tw2vdOPvPKxnSZ","payment_link":"https://rzp.io/rzp/kXDafwpr"}'::jsonb,
   true
 )
 on conflict (code) do update set
