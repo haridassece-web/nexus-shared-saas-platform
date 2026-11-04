@@ -32,6 +32,8 @@ export function Subscription({ businessId }: { businessId: string }) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showUpiModal, setShowUpiModal] = useState(false);
+  const [copiedUpi, setCopiedUpi] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -297,25 +299,28 @@ export function Subscription({ businessId }: { businessId: string }) {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "16px" }}>
-            <a
-              href="https://rzp.io/rzp/kXDafwpr"
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              className="primary"
               style={{
                 display: "block",
+                width: "100%",
                 textAlign: "center",
                 background: "#2563eb",
                 color: "white",
-                textDecoration: "none",
                 padding: "12px",
                 borderRadius: "8px",
                 fontWeight: 700,
                 fontSize: "14px",
                 boxShadow: "0 2px 6px rgba(37,99,235,0.2)",
+                cursor: "pointer",
+                border: "none",
+                margin: 0,
               }}
+              onClick={() => setShowUpiModal(true)}
             >
-              💳 Pay ₹299 Online (Razorpay)
-            </a>
+              💳 Pay ₹299 via UPI / QR / GPay
+            </button>
             <a
               href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Starter%20Plan%20(Rs.299/mo,%20Plan%20ID:%20plan_Tw2uea5q2C97dI)%20for%20my%20business"
               target="_blank"
@@ -590,6 +595,139 @@ export function Subscription({ businessId }: { businessId: string }) {
           💳 Open Razorpay Checkout ↗
         </a>
       </div>
+
+      {/* Modal: Instant ₹299 UPI Payment & QR Code */}
+      {showUpiModal && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(15, 23, 42, 0.75)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: "16px",
+          }}
+          onClick={() => setShowUpiModal(false)}
+        >
+          <div
+            className="modal-card"
+            style={{
+              background: "white",
+              borderRadius: "16px",
+              maxWidth: "460px",
+              width: "100%",
+              padding: "24px",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.25)",
+              textAlign: "center",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <div style={{ textAlign: "left" }}>
+                <span className="pill" style={{ background: "#e0f2fe", color: "#0369a1", fontSize: "11px", fontWeight: 700 }}>
+                  STARTER PLAN ACTIVATION
+                </span>
+                <h3 style={{ margin: "4px 0 0 0", fontSize: "18px" }}>Pay ₹299 via UPI / QR</h3>
+              </div>
+              <button
+                type="button"
+                className="secondary"
+                style={{ borderRadius: "50%", width: "32px", height: "32px", padding: 0, margin: 0 }}
+                onClick={() => setShowUpiModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* QR Code */}
+            <div style={{ background: "#f8fafc", padding: "16px", borderRadius: "12px", border: "1px solid #e2e8f0", margin: "16px 0" }}>
+              <img
+                src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=upi%3A%2F%2Fpay%3Fpa%3D9884933079%40upi%26pn%3DHaridass%26am%3D299%26cu%3DINR%26tn%3DNexus%2520Starter%2520Plan"
+                alt="Scan to Pay Rs. 299"
+                style={{ width: "170px", height: "170px", margin: "0 auto", display: "block", borderRadius: "8px" }}
+              />
+              <p style={{ margin: "10px 0 0 0", fontSize: "12px", color: "#64748b", fontWeight: 600 }}>
+                Scan with Google Pay, PhonePe, Paytm, or BHIM
+              </p>
+            </div>
+
+            {/* UPI ID Details */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                background: "#f1f5f9",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                marginBottom: "12px",
+                fontSize: "13px",
+              }}
+            >
+              <div>
+                <span style={{ fontSize: "11px", color: "#64748b", display: "block", textAlign: "left" }}>UPI ID:</span>
+                <b>9884933079@upi</b> (or Phone: <b>9884933079</b>)
+              </div>
+              <button
+                type="button"
+                className="secondary"
+                style={{ padding: "4px 10px", fontSize: "12px", margin: 0 }}
+                onClick={() => {
+                  navigator.clipboard.writeText("9884933079@upi");
+                  setCopiedUpi(true);
+                  setTimeout(() => setCopiedUpi(false), 2000);
+                }}
+              >
+                {copiedUpi ? "✓ Copied" : "Copy"}
+              </button>
+            </div>
+
+            {/* Mobile 1-Tap UPI Launcher */}
+            <a
+              href="upi://pay?pa=9884933079@upi&pn=Haridass%20Nexus%20Creative&am=299&cu=INR&tn=Nexus%20Starter%20Plan%20Subscription"
+              style={{
+                display: "block",
+                background: "#059669",
+                color: "white",
+                textDecoration: "none",
+                padding: "12px",
+                borderRadius: "8px",
+                fontWeight: 700,
+                fontSize: "14px",
+                marginBottom: "8px",
+              }}
+            >
+              🚀 Tap to Pay ₹299 (Open UPI App on Phone)
+            </a>
+
+            {/* Confirmation WhatsApp */}
+            <a
+              href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20have%20paid%20Rs.299%20for%20Starter%20Plan.%20Please%20activate%20my%20workspace."
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: "block",
+                background: "#f1f5f9",
+                color: "#166534",
+                border: "1px solid #bbf7d0",
+                textDecoration: "none",
+                padding: "9px",
+                borderRadius: "8px",
+                fontWeight: 600,
+                fontSize: "13px",
+              }}
+            >
+              💬 Send Payment Screenshot on WhatsApp
+            </a>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
