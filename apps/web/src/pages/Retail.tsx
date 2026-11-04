@@ -5,6 +5,12 @@ import {
   getTemplateForBusinessType,
   BusinessCategoryTemplate,
 } from "../lib/businessTemplates";
+import {
+  PaperType,
+  InvoiceType,
+  PAPER_CONFIGS,
+  INVOICE_TYPE_CONFIGS,
+} from "../types/billing";
 
 type Category = {
   id: string;
@@ -56,6 +62,8 @@ type Receipt = {
   total: number;
   cash_tendered: number;
   change_due: number;
+  paper_type?: PaperType;
+  invoice_type?: InvoiceType;
 };
 
 type PastInvoice = {
@@ -124,9 +132,31 @@ export function Retail() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<Receipt | null>(null);
-  const [printFormat, setPrintFormat] = useState<"80mm" | "a4">(() => {
-    return (localStorage.getItem("nexus_print_format") as "80mm" | "a4") || "80mm";
+  const [paperType, setPaperType] = useState<PaperType>(() => {
+    const saved = localStorage.getItem("nexus_paper_type");
+    if (saved && saved in PAPER_CONFIGS) return saved as PaperType;
+    const legacy = localStorage.getItem("nexus_print_format");
+    if (legacy === "a4") return "A4";
+    return "THERMAL_80MM";
   });
+  const [invoiceType, setInvoiceType] = useState<InvoiceType>(() => {
+    const saved = localStorage.getItem("nexus_invoice_type");
+    if (saved && saved in INVOICE_TYPE_CONFIGS) return saved as InvoiceType;
+    return "TAX_INVOICE";
+  });
+
+  // Backward compatibility alias
+  const printFormat: "80mm" | "a4" =
+    paperType === "A4" || paperType === "A5" || paperType === "LETTER" ? "a4" : "80mm";
+  function setPrintFormat(fmt: "80mm" | "a4") {
+    if (fmt === "80mm") {
+      setPaperType("THERMAL_80MM");
+      localStorage.setItem("nexus_paper_type", "THERMAL_80MM");
+    } else {
+      setPaperType("A4");
+      localStorage.setItem("nexus_paper_type", "A4");
+    }
+  }
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -376,10 +406,156 @@ export function Retail() {
       total: finalTotal,
       cash_tendered: cashNum,
       change_due: changeDue,
+      paper_type: paperType,
+      invoice_type: invoiceType,
     };
   }
 
-  function download80mmPdf(receipt: Receipt) {
+  function download58mmPdf(receipt: Receipt, invType: InvoiceType = invoiceType) {
+    const docConfig = INVOICE_TYPE_CONFIGS[invType] || INVOICE_TYPE_CONFIGS.TAX_INVOICE;
+    const dynamicHeight = Math.max(
+      140,
+      95 +
+        receipt.items.length * 7 +
+        (receipt.custom_fields ? Object.keys(receipt.custom_fields).length * 4 : 0)
+    );
+
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: [58, dynamicHeight],
+    });
+
+    const brandColor = business?.brand_color || "#2563eb";
+    const brandName = business?.brand_name || business?.name || docConfig.title;
+    const footerMsg = business?.invoice_footer || "THANK YOU!";
+    const isWhiteLabel =
+      business?.branding_mode === "white_label" ||
+      business?.show_platform_branding === false;
+
+    let r = 37, g = 99, b = 235;
+    if (brandColor.startsWith("#") && brandColor.length === 7) {
+      r = parseInt(brandColor.slice(1, 3), 16) || 37;
+      g = parseInt(brandColor.slice(3, 5), 16) || 99;
+      b = parseInt(brandColor.slice(5, 7), 16) || 235;
+    }
+
+    let y = 6;
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    pdf.setTextColor(r, g, b);
+    pdf.text(brandName.slice(0, 24), 29, y, { align: "center" });
+    pdf.setTextColor(30, 41, 59);
+
+    y += 3.5;
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(7.5);
+    pdf.text(`*** ${docConfig.title} ***`, 29, y, { align: "center" });
+    if (docConfig.subNotice) {
+      y += 3;
+      pdf.setFont("helvetica", "italic");
+      pdf.setFontSize(5.5);
+      pdf.text(docConfig.subNotice.slice(0, 38), 29, y, { align: "center" });
+    }
+
+    if (business?.phone) {
+      y += 3;
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(6.5);
+      pdf.text(`Ph: ${business.phone}`, 29, y, { align: "center" });
+    }
+
+    if (business?.gstin && invType !== "BILL_OF_SUPPLY") {
+      y += 3;
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(6.5);
+      pdf.text(`GST: ${business.gstin}`, 29, y, { align: "center" });
+    }
+
+    y += 2.5;
+    pdf.setDrawColor(150, 150, 150);
+    pdf.setLineWidth(0.2);
+    pdf.line(2, y, 56, y);
+    y += 3;
+
+    pdf.setFontSize(6.5);
+    pdf.text(`Doc: ${receipt.invoice_number}`, 2, y);
+    y += 3;
+    pdf.text(`Date: ${receipt.date}`, 2, y);
+    y += 3;
+    pdf.text(`Cust: ${receipt.customer_name.slice(0, 20)}`, 2, y);
+    if (receipt.customer_phone) {
+      y += 3;
+      pdf.text(`Ph: ${receipt.customer_phone}`, 2, y);
+    }
+
+    y += 2.5;
+    pdf.line(2, y, 56, y);
+    y += 3;
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(6.5);
+    pdf.text("ITEM", 2, y);
+    pdf.text("QTY", 32, y, { align: "center" });
+    pdf.text("TOTAL", 56, y, { align: "right" });
+    y += 2.5;
+    pdf.line(2, y, 56, y);
+    y += 3;
+
+    pdf.setFont("helvetica", "normal");
+    receipt.items.forEach((it) => {
+      pdf.text(it.name.slice(0, 15), 2, y);
+      pdf.text(String(it.qty), 32, y, { align: "center" });
+      pdf.text(`Rs.${it.total.toFixed(2)}`, 56, y, { align: "right" });
+      y += 3.5;
+    });
+
+    y += 1.5;
+    pdf.line(2, y, 56, y);
+    y += 3.5;
+
+    pdf.text(`Subtotal:`, 2, y);
+    pdf.text(`Rs.${receipt.subtotal.toFixed(2)}`, 56, y, { align: "right" });
+
+    if (receipt.discount > 0) {
+      y += 3;
+      pdf.text(`Disc:`, 2, y);
+      pdf.text(`-Rs.${receipt.discount.toFixed(2)}`, 56, y, { align: "right" });
+    }
+    if (receipt.cgst > 0 && invType === "TAX_INVOICE") {
+      y += 3;
+      pdf.text(`Taxes:`, 2, y);
+      pdf.text(`Rs.${(receipt.cgst + receipt.sgst + receipt.igst).toFixed(2)}`, 56, y, { align: "right" });
+    }
+
+    y += 2.5;
+    pdf.line(2, y, 56, y);
+    y += 4;
+
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.text(`TOTAL:`, 2, y);
+    pdf.text(`Rs.${receipt.total.toFixed(2)}`, 56, y, { align: "right" });
+
+    y += 3.5;
+    pdf.line(2, y, 56, y);
+    y += 4;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(6.5);
+    pdf.text(footerMsg, 29, y, { align: "center" });
+
+    if (!isWhiteLabel) {
+      y += 3;
+      pdf.setFontSize(5.5);
+      pdf.setTextColor(150, 150, 150);
+      pdf.text("Nexus Creative POS", 29, y, { align: "center" });
+    }
+
+    pdf.save(`${receipt.invoice_number.replace(/\//g, "-")}-58mm.pdf`);
+  }
+
+  function download80mmPdf(receipt: Receipt, invType: InvoiceType = invoiceType) {
     const dynamicHeight = Math.max(
       150,
       90 +
@@ -582,15 +758,27 @@ export function Retail() {
     pdf.save(`${receipt.invoice_number.replace(/\//g, "-")}-80mm.pdf`);
   }
 
-  function downloadA4Pdf(receipt: Receipt) {
+  function downloadSheetPdf(
+    receipt: Receipt,
+    paper: "A4" | "A5" | "LETTER" = "A4",
+    invType: InvoiceType = invoiceType
+  ) {
+    const isA5 = paper === "A5";
+    const docConfig = INVOICE_TYPE_CONFIGS[invType] || INVOICE_TYPE_CONFIGS.TAX_INVOICE;
+
     const pdf = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: "a4",
+      format: paper.toLowerCase(),
     });
 
+    const pageWidth = isA5 ? 148 : paper === "LETTER" ? 215.9 : 210;
+    const margin = isA5 ? 8 : 14;
+    const contentWidth = pageWidth - margin * 2;
+    const rightEdge = pageWidth - margin;
+
     const brandColor = business?.brand_color || "#2563eb";
-    const brandName = business?.brand_name || business?.name || "TAX INVOICE";
+    const brandName = business?.brand_name || business?.name || docConfig.title;
     const showLogo = business?.show_logo ?? true;
     const showContact = business?.show_contact ?? true;
     const showGstin = business?.show_gstin ?? true;
@@ -606,228 +794,252 @@ export function Retail() {
       b = parseInt(brandColor.slice(5, 7), 16) || 235;
     }
 
-    let y = 18;
+    let y = isA5 ? 12 : 18;
 
     // Header left: Logo & Business Info
     if (showLogo && business?.logo_url) {
       try {
-        pdf.addImage(business.logo_url, "PNG", 14, 12, 32, 14);
-        y = 30;
+        pdf.addImage(business.logo_url, "PNG", margin, isA5 ? 8 : 12, isA5 ? 24 : 32, isA5 ? 10 : 14);
+        y = isA5 ? 22 : 30;
       } catch {}
     }
 
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(16);
+    pdf.setFontSize(isA5 ? 12 : 16);
     pdf.setTextColor(r, g, b);
-    pdf.text(brandName, 14, y);
+    pdf.text(brandName, margin, y);
     pdf.setTextColor(30, 41, 59);
 
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(9);
-    y += 5;
-    pdf.text(`${template.name} · ${template.sector}`, 14, y);
-    y += 5;
+    pdf.setFontSize(isA5 ? 7.5 : 9);
+    y += 4.5;
+    pdf.text(`${template.name} · ${template.sector}`, margin, y);
+    y += 4.5;
 
     if (showContact) {
       if (business?.address) {
-        pdf.text(business.address, 14, y);
-        y += 5;
+        pdf.text(business.address.slice(0, isA5 ? 40 : 60), margin, y);
+        y += 4;
       }
       if (business?.phone) {
-        pdf.text(`Phone: ${business.phone}`, 14, y);
-        y += 5;
+        pdf.text(`Phone: ${business.phone}`, margin, y);
+        y += 4;
       }
     }
 
-    if (showGstin && business?.gstin) {
+    if (showGstin && business?.gstin && invType !== "BILL_OF_SUPPLY") {
       pdf.setFont("helvetica", "bold");
-      pdf.text(`GSTIN: ${business.gstin}`, 14, y);
-      pdf.setFont("helvetica", "normal");
-      y += 5;
+      pdf.text(`GSTIN: ${business.gstin}`, margin, y);
+      y += 4;
     }
 
-    // Header right: TAX INVOICE block
+    // Top Right Header: Official Invoice Title & Meta Box
+    let metaY = isA5 ? 12 : 18;
+
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(18);
+    pdf.setFontSize(isA5 ? 11 : 15);
     pdf.setTextColor(r, g, b);
-    pdf.text("TAX INVOICE", 196, 20, { align: "right" });
+    pdf.text(docConfig.title, rightEdge, metaY, { align: "right" });
     pdf.setTextColor(30, 41, 59);
 
-    pdf.setFontSize(9);
-    pdf.text(`Invoice No: ${receipt.invoice_number}`, 196, 27, {
-      align: "right",
-    });
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Date: ${receipt.date}`, 196, 32, { align: "right" });
-    pdf.text(`Order Type: ${receipt.order_type}`, 196, 37, { align: "right" });
-    pdf.text(`Payment: ${receipt.payment_method}`, 196, 42, { align: "right" });
+    if (docConfig.subNotice) {
+      metaY += 4;
+      pdf.setFont("helvetica", "italic");
+      pdf.setFontSize(isA5 ? 6 : 7.5);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(docConfig.subNotice.slice(0, 45), rightEdge, metaY, { align: "right" });
+    }
 
-    // Separator line
-    y = Math.max(y, 48);
-    pdf.setDrawColor(r, g, b);
-    pdf.setLineWidth(0.8);
-    pdf.line(14, y, 196, y);
-    y += 6;
+    metaY += 5;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(isA5 ? 7.5 : 8.5);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(`Doc #: ${receipt.invoice_number}`, rightEdge, metaY, { align: "right" });
+    metaY += 4;
+    pdf.text(`Date: ${receipt.date}`, rightEdge, metaY, { align: "right" });
+    metaY += 4;
+    pdf.text(`Order: ${receipt.order_type}`, rightEdge, metaY, { align: "right" });
+    metaY += 4;
+    pdf.text(`Payment: ${receipt.payment_method}`, rightEdge, metaY, { align: "right" });
+
+    y = Math.max(y + 2, metaY + 6);
 
     // Bill To Customer Details Box
     pdf.setFillColor(248, 250, 252);
-    pdf.roundedRect(14, y, 182, 20, 2, 2, "F");
+    pdf.roundedRect(margin, y, contentWidth, isA5 ? 16 : 20, 2, 2, "F");
 
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(8.5);
+    pdf.setFontSize(isA5 ? 7.5 : 8.5);
     pdf.setTextColor(71, 85, 105);
-    pdf.text("BILLED TO:", 18, y + 5);
+    pdf.text("BILLED TO:", margin + 4, y + 4.5);
     pdf.setTextColor(15, 23, 42);
-    pdf.setFontSize(10);
-    pdf.text(receipt.customer_name, 18, y + 10);
+    pdf.setFontSize(isA5 ? 8.5 : 10);
+    pdf.text(receipt.customer_name, margin + 4, y + (isA5 ? 8.5 : 10));
 
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(8.5);
+    pdf.setFontSize(isA5 ? 7 : 8.5);
     if (receipt.customer_phone) {
-      pdf.text(`Phone: ${receipt.customer_phone}`, 18, y + 15);
+      pdf.text(`Phone: ${receipt.customer_phone}`, margin + 4, y + (isA5 ? 12.5 : 15));
     }
     if (customerState) {
-      pdf.text(`State Code: ${customerState}`, 75, y + 15);
+      pdf.text(`State Code: ${customerState}`, margin + (isA5 ? 55 : 70), y + (isA5 ? 12.5 : 15));
     }
 
-    // Custom fields in Bill To box
-    if (receipt.custom_fields && Object.keys(receipt.custom_fields).length > 0) {
-      let cx = 110;
-      Object.entries(receipt.custom_fields).forEach(([k, v]) => {
-        if (v && cx < 190) {
-          const fieldDef = template.custom_fields.find((f) => f.name === k);
-          const lbl = fieldDef?.label || k;
-          pdf.text(`${lbl}: ${v}`, cx, y + 10);
-          cx += 40;
-        }
-      });
-    }
-
-    y += 26;
+    y += isA5 ? 20 : 25;
 
     // Table Header
     pdf.setFillColor(r, g, b);
-    pdf.rect(14, y, 182, 7, "F");
+    pdf.rect(margin, y, contentWidth, isA5 ? 6 : 7, "F");
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(8.5);
+    pdf.setFontSize(isA5 ? 7.5 : 8.5);
     pdf.setTextColor(255, 255, 255);
-    pdf.text("#", 18, y + 5);
-    pdf.text(template.item_label, 30, y + 5);
-    pdf.text("HSN", 110, y + 5);
-    pdf.text("Qty", 135, y + 5, { align: "center" });
-    pdf.text("Rate (Rs.)", 160, y + 5, { align: "right" });
-    pdf.text("Amount (Rs.)", 192, y + 5, { align: "right" });
 
-    y += 7;
+    const cNum = margin + 3;
+    const cItem = margin + (isA5 ? 10 : 16);
+    const cHSN = isA5 ? 68 : 110;
+    const cQty = isA5 ? 88 : 135;
+    const cRate = isA5 ? 108 : 160;
+    const cTot = rightEdge - 3;
+
+    pdf.text("#", cNum, y + (isA5 ? 4.2 : 5));
+    pdf.text(template.item_label, cItem, y + (isA5 ? 4.2 : 5));
+    pdf.text("HSN", cHSN, y + (isA5 ? 4.2 : 5));
+    pdf.text("Qty", cQty, y + (isA5 ? 4.2 : 5), { align: "center" });
+    pdf.text("Rate", cRate, y + (isA5 ? 4.2 : 5), { align: "right" });
+    pdf.text("Amount (Rs.)", cTot, y + (isA5 ? 4.2 : 5), { align: "right" });
+
+    y += isA5 ? 6 : 7;
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(8.5);
+    pdf.setFontSize(isA5 ? 7.5 : 8.5);
     pdf.setTextColor(30, 41, 59);
 
     receipt.items.forEach((it, idx) => {
       pdf.setDrawColor(226, 232, 240);
-      pdf.line(14, y + 6, 196, y + 6);
+      pdf.line(margin, y + 5.5, rightEdge, y + 5.5);
 
-      pdf.text(String(idx + 1), 18, y + 4.5);
-      pdf.text(it.name.slice(0, 42), 30, y + 4.5);
-      pdf.text(it.hsn || "—", 110, y + 4.5);
-      pdf.text(String(it.qty), 135, y + 4.5, { align: "center" });
-      pdf.text(`Rs.${it.price.toFixed(2)}`, 160, y + 4.5, { align: "right" });
-      pdf.text(`Rs.${it.total.toFixed(2)}`, 192, y + 4.5, { align: "right" });
-      y += 6.5;
+      pdf.text(String(idx + 1), cNum, y + 4);
+      pdf.text(it.name.slice(0, isA5 ? 24 : 42), cItem, y + 4);
+      pdf.text(it.hsn || "—", cHSN, y + 4);
+      pdf.text(String(it.qty), cQty, y + 4, { align: "center" });
+      pdf.text(`Rs.${it.price.toFixed(2)}`, cRate, y + 4, { align: "right" });
+      pdf.text(`Rs.${it.total.toFixed(2)}`, cTot, y + 4, { align: "right" });
+      y += isA5 ? 5.5 : 6.5;
     });
 
-    y += 4;
+    y += 3;
     pdf.setDrawColor(r, g, b);
-    pdf.setLineWidth(0.4);
-    pdf.line(120, y, 196, y);
-    y += 5;
+    pdf.setLineWidth(0.5);
+    pdf.line(margin, y, rightEdge, y);
+    y += 4;
 
-    // Totals block on right
-    pdf.setFontSize(9);
-    pdf.text("Subtotal:", 140, y);
-    pdf.text(`Rs.${receipt.subtotal.toFixed(2)}`, 192, y, { align: "right" });
+    // Totals Block
+    const totLabelX = isA5 ? 80 : 130;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(isA5 ? 7.5 : 8.5);
+
+    pdf.text("Subtotal:", totLabelX, y);
+    pdf.text(`Rs.${receipt.subtotal.toFixed(2)}`, rightEdge - 3, y, { align: "right" });
 
     if (receipt.discount > 0) {
-      y += 5;
-      pdf.setTextColor(185, 28, 28);
-      pdf.text("Discount:", 140, y);
-      pdf.text(`-Rs.${receipt.discount.toFixed(2)}`, 192, y, { align: "right" });
-      pdf.setTextColor(30, 41, 59);
+      y += 4;
+      pdf.text("Discount:", totLabelX, y);
+      pdf.text(`-Rs.${receipt.discount.toFixed(2)}`, rightEdge - 3, y, { align: "right" });
     }
 
-    if (receipt.cgst > 0) {
-      y += 5;
-      pdf.text("CGST:", 140, y);
-      pdf.text(`Rs.${receipt.cgst.toFixed(2)}`, 192, y, { align: "right" });
+    if (receipt.cgst > 0 && invType === "TAX_INVOICE") {
+      y += 4;
+      pdf.text("CGST:", totLabelX, y);
+      pdf.text(`Rs.${receipt.cgst.toFixed(2)}`, rightEdge - 3, y, { align: "right" });
+    }
+    if (receipt.sgst > 0 && invType === "TAX_INVOICE") {
+      y += 4;
+      pdf.text("SGST:", totLabelX, y);
+      pdf.text(`Rs.${receipt.sgst.toFixed(2)}`, rightEdge - 3, y, { align: "right" });
+    }
+    if (receipt.igst > 0 && invType === "TAX_INVOICE") {
+      y += 4;
+      pdf.text("IGST:", totLabelX, y);
+      pdf.text(`Rs.${receipt.igst.toFixed(2)}`, rightEdge - 3, y, { align: "right" });
     }
 
-    if (receipt.sgst > 0) {
-      y += 5;
-      pdf.text("SGST:", 140, y);
-      pdf.text(`Rs.${receipt.sgst.toFixed(2)}`, 192, y, { align: "right" });
-    }
-
-    if (receipt.igst > 0) {
-      y += 5;
-      pdf.text("IGST:", 140, y);
-      pdf.text(`Rs.${receipt.igst.toFixed(2)}`, 192, y, { align: "right" });
-    }
-
-    if (Math.abs(receipt.round_off) > 0.001) {
-      y += 5;
-      pdf.text("Round Off:", 140, y);
+    if (receipt.round_off !== 0) {
+      y += 4;
+      pdf.text("Round Off:", totLabelX, y);
       pdf.text(
         `${receipt.round_off > 0 ? "+" : ""}Rs.${receipt.round_off.toFixed(2)}`,
-        192,
+        rightEdge - 3,
         y,
         { align: "right" }
       );
     }
 
-    y += 2;
-    pdf.line(120, y, 196, y);
-    y += 5;
+    y += 3;
+    pdf.setDrawColor(203, 213, 225);
+    pdf.line(totLabelX, y, rightEdge, y);
+    y += 4;
 
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(11);
+    pdf.setFontSize(isA5 ? 10 : 11);
     pdf.setTextColor(r, g, b);
-    pdf.text("GRAND TOTAL:", 140, y);
-    pdf.text(`Rs.${receipt.total.toFixed(2)}`, 192, y, { align: "right" });
+    pdf.text("Grand Total:", totLabelX, y);
+    pdf.text(`Rs.${receipt.total.toFixed(2)}`, rightEdge - 3, y, { align: "right" });
     pdf.setTextColor(30, 41, 59);
 
-    // Terms & Signatory box
-    y += 18;
+    // Footer
+    y += isA5 ? 8 : 14;
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(8);
-    pdf.text("Terms & Conditions:", 14, y);
+    pdf.setFontSize(isA5 ? 7 : 8);
+    pdf.text("Terms & Conditions:", margin, y);
     pdf.setFont("helvetica", "italic");
-    pdf.text(footerMsg, 14, y + 4);
+    pdf.text(footerMsg, margin, y + 3.5);
 
     pdf.setFont("helvetica", "normal");
     pdf.text(
       `For ${business?.brand_name || business?.name || "Business"}`,
-      196,
+      rightEdge,
       y,
       { align: "right" }
     );
-    pdf.line(150, y + 14, 196, y + 14);
-    pdf.text("Authorized Signatory", 196, y + 18, { align: "right" });
+    pdf.line(rightEdge - 40, y + 12, rightEdge, y + 12);
+    pdf.text("Authorized Signatory", rightEdge, y + 15, { align: "right" });
 
     if (!isWhiteLabel) {
-      pdf.setFontSize(7.5);
+      const bottomY = isA5 ? 202 : 285;
+      pdf.setFontSize(6.5);
       pdf.setTextColor(150, 150, 150);
-      pdf.text("Powered by Nexus Creative SaaS Platform", 14, 285);
+      pdf.text("⚡ Powered by Nexus Creative SaaS Platform", margin, bottomY);
     }
 
-    pdf.save(`${receipt.invoice_number.replace(/\//g, "-")}-A4.pdf`);
+    pdf.save(`${receipt.invoice_number.replace(/\//g, "-")}-${paper}.pdf`);
   }
 
-  function downloadPdf(receipt: Receipt, formatOverride?: "80mm" | "a4") {
-    const targetFormat = formatOverride || printFormat;
-    if (targetFormat === "80mm") {
-      download80mmPdf(receipt);
+  function downloadA4Pdf(receipt: Receipt) {
+    downloadSheetPdf(receipt, "A4", invoiceType);
+  }
+
+  function downloadPdf(
+    receipt: Receipt,
+    formatOverride?: PaperType | "80mm" | "a4",
+    invOverride?: InvoiceType
+  ) {
+    const activeDocType = invOverride || receipt.invoice_type || invoiceType;
+    let targetPaper: PaperType = receipt.paper_type || paperType;
+    if (formatOverride) {
+      if (formatOverride === "80mm") targetPaper = "THERMAL_80MM";
+      else if (formatOverride === "a4") targetPaper = "A4";
+      else targetPaper = formatOverride;
+    }
+
+    if (targetPaper === "THERMAL_58MM") {
+      download58mmPdf(receipt, activeDocType);
+    } else if (targetPaper === "A5") {
+      downloadSheetPdf(receipt, "A5", activeDocType);
+    } else if (targetPaper === "LETTER") {
+      downloadSheetPdf(receipt, "LETTER", activeDocType);
+    } else if (targetPaper === "A4") {
+      downloadSheetPdf(receipt, "A4", activeDocType);
     } else {
-      downloadA4Pdf(receipt);
+      download80mmPdf(receipt, activeDocType);
     }
   }
 
@@ -1140,7 +1352,15 @@ export function Retail() {
       {/* Bill Receipt Preview Modal */}
       {activeReceipt && (
         <div className="modal-overlay no-print">
-          <div className={`modal-content ${printFormat === "a4" ? "a4-preview-mode" : ""}`}>
+          <div
+            className={`modal-content ${
+              paperType === "A4" || paperType === "LETTER"
+                ? "a4-preview-mode"
+                : paperType === "A5"
+                ? "a5-preview-mode"
+                : ""
+            }`}
+          >
             <div
               style={{
                 display: "flex",
@@ -1148,7 +1368,22 @@ export function Retail() {
                 alignItems: "center",
               }}
             >
-              <h2 style={{ margin: 0 }}>🧾 Bill Invoice Preview</h2>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <h2 style={{ margin: 0 }}>🧾 Document Preview</h2>
+                <span
+                  style={{
+                    background: INVOICE_TYPE_CONFIGS[invoiceType].badgeColor + "22",
+                    color: INVOICE_TYPE_CONFIGS[invoiceType].badgeColor,
+                    fontSize: "11px",
+                    fontWeight: 800,
+                    padding: "3px 8px",
+                    borderRadius: "6px",
+                    border: `1px solid ${INVOICE_TYPE_CONFIGS[invoiceType].badgeColor}44`,
+                  }}
+                >
+                  {INVOICE_TYPE_CONFIGS[invoiceType].title}
+                </span>
+              </div>
               <button
                 className="secondary"
                 style={{ margin: 0, padding: "4px 10px" }}
@@ -1158,65 +1393,110 @@ export function Retail() {
               </button>
             </div>
 
-            {/* Print Sheet Option Toggle (80mm Thermal vs A4 Sheet) */}
+            {/* Document Type & Paper Size Switchers */}
             <div
               style={{
-                display: "flex",
-                background: "#f1f5f9",
-                padding: "4px",
-                borderRadius: "10px",
-                margin: "14px 0 16px 0",
-                gap: "6px",
-                border: "1px solid #e2e8f0",
+                display: "grid",
+                gridTemplateColumns: "1fr 2fr",
+                gap: "8px",
+                marginTop: "12px",
+                marginBottom: "12px",
+                alignItems: "center",
               }}
             >
-              <button
-                type="button"
-                onClick={() => {
-                  setPrintFormat("80mm");
-                  localStorage.setItem("nexus_print_format", "80mm");
-                }}
-                style={{
-                  flex: 1,
-                  padding: "8px 12px",
-                  fontSize: "13px",
-                  fontWeight: 700,
-                  borderRadius: "7px",
-                  border: "none",
-                  cursor: "pointer",
-                  background: printFormat === "80mm" ? "#0f172a" : "transparent",
-                  color: printFormat === "80mm" ? "white" : "#64748b",
-                  boxShadow: printFormat === "80mm" ? "0 2px 6px rgba(15,23,42,0.15)" : "none",
-                }}
-              >
-                🧾 80mm Thermal POS Slip
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPrintFormat("a4");
-                  localStorage.setItem("nexus_print_format", "a4");
-                }}
-                style={{
-                  flex: 1,
-                  padding: "8px 12px",
-                  fontSize: "13px",
-                  fontWeight: 700,
-                  borderRadius: "7px",
-                  border: "none",
-                  cursor: "pointer",
-                  background: printFormat === "a4" ? "#0f172a" : "transparent",
-                  color: printFormat === "a4" ? "white" : "#64748b",
-                  boxShadow: printFormat === "a4" ? "0 2px 6px rgba(15,23,42,0.15)" : "none",
-                }}
-              >
-                📄 A4 Standard Sheet Invoice
-              </button>
+              <div>
+                <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", display: "block", marginBottom: "3px" }}>
+                  Document Type:
+                </label>
+                <select
+                  value={invoiceType}
+                  onChange={(e) => {
+                    const newType = e.target.value as InvoiceType;
+                    setInvoiceType(newType);
+                    localStorage.setItem("nexus_invoice_type", newType);
+                  }}
+                  style={{
+                    padding: "6px 8px",
+                    fontSize: "12px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    width: "100%",
+                    background: "white",
+                    fontWeight: 700,
+                  }}
+                >
+                  {(Object.keys(INVOICE_TYPE_CONFIGS) as InvoiceType[]).map((k) => (
+                    <option key={k} value={k}>
+                      {INVOICE_TYPE_CONFIGS[k].title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", display: "block", marginBottom: "3px" }}>
+                  Paper Format:
+                </label>
+                <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                  {(["THERMAL_80MM", "THERMAL_58MM", "A4", "A5", "LETTER"] as PaperType[]).map((pt) => {
+                    const active = paperType === pt;
+                    return (
+                      <button
+                        key={pt}
+                        type="button"
+                        onClick={() => {
+                          setPaperType(pt);
+                          localStorage.setItem("nexus_paper_type", pt);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: "6px 8px",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          borderRadius: "6px",
+                          border: active ? "1px solid #0f172a" : "1px solid #cbd5e1",
+                          cursor: "pointer",
+                          background: active ? "#0f172a" : "#f8fafc",
+                          color: active ? "white" : "#475569",
+                          margin: 0,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {PAPER_CONFIGS[pt].shortLabel}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
-            {/* 1. 80mm POS Thermal Receipt Preview */}
-            {printFormat === "80mm" && (
-              <div className="thermal-receipt">
+            {/* 1. POS Thermal Receipt Preview (80mm or 58mm Mini) */}
+            {PAPER_CONFIGS[paperType].isThermal && (
+              <div className={`thermal-receipt ${paperType === "THERMAL_58MM" ? "compact-58mm" : ""}`}>
+                <div
+                  className="center"
+                  style={{
+                    fontWeight: 800,
+                    fontSize: paperType === "THERMAL_58MM" ? "12px" : "14px",
+                    margin: "4px 0 2px 0",
+                    color: INVOICE_TYPE_CONFIGS[invoiceType].badgeColor,
+                  }}
+                >
+                  *** {INVOICE_TYPE_CONFIGS[invoiceType].title} ***
+                </div>
+                {INVOICE_TYPE_CONFIGS[invoiceType].subNotice && (
+                  <div
+                    className="center"
+                    style={{
+                      fontSize: paperType === "THERMAL_58MM" ? "9px" : "11px",
+                      fontStyle: "italic",
+                      color: "#64748b",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    {INVOICE_TYPE_CONFIGS[invoiceType].subNotice}
+                  </div>
+                )}
                 {(business?.show_logo ?? true) && business?.logo_url && (
                   <div className="center" style={{ marginBottom: "8px" }}>
                     <img
@@ -1379,8 +1659,8 @@ export function Retail() {
               </div>
             )}
 
-            {/* 2. Standard A4 Tax Invoice Preview */}
-            {printFormat === "a4" && (
+            {/* 2. Standard Sheet Invoice Preview (A4 / A5 / Letter) */}
+            {!PAPER_CONFIGS[paperType].isThermal && (
               <div className="a4-invoice">
                 <div className="a4-header">
                   <div style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
@@ -1420,8 +1700,13 @@ export function Retail() {
                       className="a4-invoice-title"
                       style={{ color: business?.brand_color || "#0f172a" }}
                     >
-                      TAX INVOICE
+                      {INVOICE_TYPE_CONFIGS[invoiceType].title}
                     </div>
+                    {INVOICE_TYPE_CONFIGS[invoiceType].subNotice && (
+                      <div style={{ fontSize: "10px", fontStyle: "italic", color: "#64748b", marginBottom: "4px" }}>
+                        {INVOICE_TYPE_CONFIGS[invoiceType].subNotice}
+                      </div>
+                    )}
                     <div><b>Invoice #:</b> {activeReceipt.invoice_number}</div>
                     <div><b>Date:</b> {activeReceipt.date}</div>
                     <div><b>Order:</b> {activeReceipt.order_type}</div>
@@ -1574,7 +1859,7 @@ export function Retail() {
                 style={{ background: "#059669", fontSize: "16px" }}
                 onClick={() => window.print()}
               >
-                {printFormat === "80mm" ? "🖨️ Print 80mm POS Slip" : "🖨️ Print A4 Tax Invoice"}
+                🖨️ Print {PAPER_CONFIGS[paperType].shortLabel} ({INVOICE_TYPE_CONFIGS[invoiceType].title})
               </button>
               <div
                 style={{
@@ -1588,7 +1873,7 @@ export function Retail() {
                   style={{ margin: 0 }}
                   onClick={() => downloadPdf(activeReceipt)}
                 >
-                  📥 Download {printFormat.toUpperCase()} PDF
+                  📥 Download {PAPER_CONFIGS[paperType].shortLabel} PDF
                 </button>
                 <button
                   className="secondary"
@@ -1612,8 +1897,36 @@ export function Retail() {
 
       {/* Hidden printable receipt for window.print() */}
       {activeReceipt && (
-        printFormat === "80mm" ? (
-          <div id="printable-receipt" className="print-80mm thermal-receipt">
+        PAPER_CONFIGS[paperType].isThermal ? (
+          <div
+            id="printable-receipt"
+            className={`${PAPER_CONFIGS[paperType].printClass} thermal-receipt ${
+              paperType === "THERMAL_58MM" ? "compact-58mm" : ""
+            }`}
+          >
+            <div
+              className="center"
+              style={{
+                fontWeight: 800,
+                fontSize: paperType === "THERMAL_58MM" ? "12px" : "13px",
+                marginBottom: "4px",
+              }}
+            >
+              *** {INVOICE_TYPE_CONFIGS[invoiceType].title} ***
+            </div>
+            {INVOICE_TYPE_CONFIGS[invoiceType].subNotice && (
+              <div
+                className="center"
+                style={{
+                  fontSize: paperType === "THERMAL_58MM" ? "8.5px" : "10px",
+                  fontStyle: "italic",
+                  color: "#475569",
+                  marginBottom: "4px",
+                }}
+              >
+                {INVOICE_TYPE_CONFIGS[invoiceType].subNotice}
+              </div>
+            )}
             {(business?.show_logo ?? true) && business?.logo_url && (
               <div className="center" style={{ marginBottom: "6px" }}>
                 <img
@@ -1770,7 +2083,7 @@ export function Retail() {
               )}
           </div>
         ) : (
-          <div id="printable-receipt" className="print-a4 a4-invoice">
+          <div id="printable-receipt" className={`${PAPER_CONFIGS[paperType].printClass} a4-invoice`}>
             <div className="a4-header">
               <div>
                 {(business?.show_logo ?? true) && business?.logo_url && (
@@ -1808,8 +2121,13 @@ export function Retail() {
                     borderColor: business?.brand_color || "#2563eb",
                   }}
                 >
-                  TAX INVOICE
+                  {INVOICE_TYPE_CONFIGS[invoiceType].title}
                 </div>
+                {INVOICE_TYPE_CONFIGS[invoiceType].subNotice && (
+                  <div style={{ fontSize: "10px", fontStyle: "italic", color: "#64748b", margin: "2px 0 4px 0" }}>
+                    {INVOICE_TYPE_CONFIGS[invoiceType].subNotice}
+                  </div>
+                )}
                 <div><b>Invoice No:</b> {activeReceipt.invoice_number}</div>
                 <div><b>Date:</b> {activeReceipt.date}</div>
                 <div><b>Order Type:</b> {activeReceipt.order_type}</div>
@@ -2476,65 +2794,82 @@ export function Retail() {
             </div>
           </div>
 
-          {/* Print & PDF Sheet Selector Pill */}
+          {/* Document Type & Print Paper Format Selector */}
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
               background: "#f1f5f9",
-              padding: "6px 10px",
+              padding: "8px 10px",
               borderRadius: "8px",
               marginBottom: "10px",
               border: "1px solid #e2e8f0",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
             }}
           >
-            <span style={{ fontSize: "12px", fontWeight: 700, color: "#334155" }}>
-              🖨️ Format:
-            </span>
-            <div style={{ display: "flex", gap: "6px" }}>
-              <button
-                type="button"
-                className={`format-toggle-btn ${printFormat === "80mm" ? "active" : ""}`}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#334155", whiteSpace: "nowrap" }}>
+                📑 Doc Type:
+              </span>
+              <select
+                value={invoiceType}
+                onChange={(e) => {
+                  const newType = e.target.value as InvoiceType;
+                  setInvoiceType(newType);
+                  localStorage.setItem("nexus_invoice_type", newType);
+                }}
                 style={{
-                  padding: "4px 10px",
+                  padding: "4px 8px",
                   fontSize: "12px",
                   borderRadius: "6px",
-                  border: printFormat === "80mm" ? "1px solid #2563eb" : "1px solid #cbd5e1",
-                  background: printFormat === "80mm" ? "#2563eb" : "#ffffff",
-                  color: printFormat === "80mm" ? "#ffffff" : "#475569",
+                  border: "1px solid #cbd5e1",
+                  background: "white",
                   fontWeight: 700,
-                  cursor: "pointer",
+                  flex: 1,
                   margin: 0,
                 }}
-                onClick={() => {
-                  setPrintFormat("80mm");
-                  localStorage.setItem("nexus_print_format", "80mm");
-                }}
               >
-                🧾 80mm POS Roll
-              </button>
-              <button
-                type="button"
-                className={`format-toggle-btn ${printFormat === "a4" ? "active" : ""}`}
-                style={{
-                  padding: "4px 10px",
-                  fontSize: "12px",
-                  borderRadius: "6px",
-                  border: printFormat === "a4" ? "1px solid #2563eb" : "1px solid #cbd5e1",
-                  background: printFormat === "a4" ? "#2563eb" : "#ffffff",
-                  color: printFormat === "a4" ? "#ffffff" : "#475569",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  margin: 0,
-                }}
-                onClick={() => {
-                  setPrintFormat("a4");
-                  localStorage.setItem("nexus_print_format", "a4");
-                }}
-              >
-                📄 A4 Tax Sheet
-              </button>
+                {(Object.keys(INVOICE_TYPE_CONFIGS) as InvoiceType[]).map((k) => (
+                  <option key={k} value={k}>
+                    {INVOICE_TYPE_CONFIGS[k].title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#334155", whiteSpace: "nowrap" }}>
+                🖨️ Format:
+              </span>
+              <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", flex: 1, justifyContent: "flex-end" }}>
+                {(["THERMAL_80MM", "THERMAL_58MM", "A4", "A5", "LETTER"] as PaperType[]).map((pt) => {
+                  const active = paperType === pt;
+                  return (
+                    <button
+                      key={pt}
+                      type="button"
+                      className={`format-toggle-btn ${active ? "active" : ""}`}
+                      style={{
+                        padding: "3px 8px",
+                        fontSize: "11px",
+                        borderRadius: "5px",
+                        border: active ? "1px solid #2563eb" : "1px solid #cbd5e1",
+                        background: active ? "#2563eb" : "#ffffff",
+                        color: active ? "#ffffff" : "#475569",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        margin: 0,
+                      }}
+                      onClick={() => {
+                        setPaperType(pt);
+                        localStorage.setItem("nexus_paper_type", pt);
+                      }}
+                    >
+                      {PAPER_CONFIGS[pt].shortLabel}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -2551,9 +2886,7 @@ export function Retail() {
           >
             {busy
               ? "Processing…"
-              : printFormat === "80mm"
-              ? "🖨️ Save & Print Bill (80mm)"
-              : "🖨️ Save & Print Tax Invoice (A4)"}
+              : `🖨️ Save & Print ${PAPER_CONFIGS[paperType].shortLabel}`}
           </button>
 
           <div
@@ -2570,7 +2903,7 @@ export function Retail() {
               disabled={busy || !lines.length}
               onClick={saveAndDownload}
             >
-              {busy ? "Saving…" : `📥 ${printFormat.toUpperCase()} PDF`}
+              {busy ? "Saving…" : `📥 ${PAPER_CONFIGS[paperType].shortLabel} PDF`}
             </button>
 
             <button

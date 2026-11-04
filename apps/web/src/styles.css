@@ -28,6 +28,9 @@
 .modal-content.a4-preview-mode {
   max-width: 840px;
 }
+.modal-content.a5-preview-mode {
+  max-width: 640px;
+}
 .thermal-receipt {
   font-family: 'Courier New', Courier, monospace;
   font-size: 13px;
@@ -38,6 +41,18 @@
   border: 1px dashed #cbd5e1;
   border-radius: 8px;
   margin: 16px 0;
+}
+.thermal-receipt.compact-58mm {
+  max-width: 320px;
+  margin: 12px auto;
+  font-size: 11px;
+  padding: 12px 10px;
+}
+.thermal-receipt.compact-58mm table {
+  font-size: 10px;
+}
+.thermal-receipt.compact-58mm .biz-title {
+  font-size: 14px;
 }
 .thermal-receipt .center {
   text-align: center;
@@ -210,6 +225,19 @@
     box-shadow: none !important;
   }
 
+  /* 58mm Mini POS Thermal Slip Print */
+  #printable-receipt.print-58mm {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 56mm;
+    margin: 0;
+    padding: 1.5mm;
+    border: none !important;
+    font-size: 10px;
+    box-shadow: none !important;
+  }
+
   /* A4 Standard Sheet Invoice Print */
   #printable-receipt.print-a4 {
     position: absolute;
@@ -217,6 +245,34 @@
     top: 0;
     width: 100%;
     max-width: 210mm;
+    margin: 0 auto;
+    padding: 10mm 14mm;
+    border: none !important;
+    font-size: 13px;
+    box-shadow: none !important;
+  }
+
+  /* A5 Half Sheet Invoice Print */
+  #printable-receipt.print-a5 {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 148mm;
+    margin: 0 auto;
+    padding: 6mm 8mm;
+    border: none !important;
+    font-size: 11px;
+    box-shadow: none !important;
+  }
+
+  /* US Letter Sheet Invoice Print */
+  #printable-receipt.print-letter {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 215.9mm;
     margin: 0 auto;
     padding: 10mm 14mm;
     border: none !important;
