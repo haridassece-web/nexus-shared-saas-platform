@@ -138,3 +138,4 @@ export const INVOICE_TYPE_CONFIGS: Record<InvoiceType, InvoiceTypeConfig> = {
     subNotice: "Delivery Challan - Goods transported not for sale / on approval.",
   },
 };
+

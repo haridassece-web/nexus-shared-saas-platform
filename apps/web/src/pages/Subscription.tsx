@@ -292,10 +292,6 @@ export function Subscription({ businessId }: { businessId: string }) {
                 <span style={{ color: "#16a34a", fontWeight: 800 }}>✓</span> Real-time Daily Sales & Payment Reports
               </li>
             </ul>
-
-            <div style={{ marginTop: "12px", padding: "6px 10px", background: "#f8fafc", borderRadius: "6px", fontSize: "11px", color: "#64748b", border: "1px solid #e2e8f0" }}>
-              <b>Razorpay Plan ID:</b> <code style={{ color: "#2563eb", fontWeight: 700 }}>plan_Tw2uea5q2C97dI</code>
-            </div>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "16px" }}>
@@ -322,7 +318,7 @@ export function Subscription({ businessId }: { businessId: string }) {
               💳 Pay ₹299 via UPI / QR / GPay
             </button>
             <a
-              href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Starter%20Plan%20(Rs.299/mo,%20Plan%20ID:%20plan_Tw2uea5q2C97dI)%20for%20my%20business"
+              href="https://wa.me/919884933079?text=Hi%20Haridass,%20I%20want%20to%20activate%20Starter%20Plan%20(Rs.299/mo)%20for%20my%20business"
               target="_blank"
               rel="noreferrer"
               style={{

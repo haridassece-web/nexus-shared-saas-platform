@@ -526,7 +526,6 @@ async function handleDirectSupabase<T>(
           features: {
             description: "Small shops",
             target_audience: "Small shops",
-            razorpay_plan_id: "plan_Tw2uea5q2C97dI",
             payment_link: "https://rzp.io/rzp/kXDafwpr",
           },
         },

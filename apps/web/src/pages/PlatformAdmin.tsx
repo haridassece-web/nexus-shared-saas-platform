@@ -260,12 +260,12 @@ export function PlatformAdmin() {
 
   // 5. Delete / Deactivate Plan
   async function handleDeletePlan(planCode: string) {
-    if (planCode === "trial" || planCode === "starter") {
-      alert("Base platform plans (trial/starter) cannot be deleted.");
+    if (planCode === "trial") {
+      alert("Trial plan cannot be deleted.");
       return;
     }
     const confirmDeactivate = window.confirm(
-      `Are you sure you want to delete/deactivate the "${planCode}" plan?`
+      `Are you sure you want to delete the "${planCode}" plan from the database?`
     );
     if (!confirmDeactivate) return;
 
@@ -733,11 +733,6 @@ export function PlatformAdmin() {
                     <tr key={p.code}>
                       <td>
                         <code>{p.code}</code>
-                        {(p.features?.razorpay_plan_id || (p.code === "starter" ? "plan_Tw2uea5q2C97dI" : p.code === "business" ? "plan_Tw2vdOPvPKxnSZ" : null)) && (
-                          <div style={{ marginTop: "4px", fontSize: "11px", color: "#64748b" }}>
-                            Razorpay: <code style={{ color: "#0284c7" }}>{p.features?.razorpay_plan_id || (p.code === "starter" ? "plan_Tw2uea5q2C97dI" : "plan_Tw2vdOPvPKxnSZ")}</code>
-                          </div>
-                        )}
                       </td>
                       <td>
                         <b>{p.name}</b>
@@ -751,7 +746,7 @@ export function PlatformAdmin() {
                       <td>{p.max_users} users</td>
                       <td>{p.max_products} items</td>
                       <td style={{ textAlign: "right" }}>
-                        {p.code !== "trial" && p.code !== "starter" && (
+                        {p.code !== "trial" && (
                           <button
                             type="button"
                             className="secondary"
@@ -764,7 +759,7 @@ export function PlatformAdmin() {
                             disabled={busy === `plan_${p.code}`}
                             onClick={() => handleDeletePlan(p.code)}
                           >
-                            🗑️ Deactivate
+                            🗑️ Delete
                           </button>
                         )}
                       </td>
