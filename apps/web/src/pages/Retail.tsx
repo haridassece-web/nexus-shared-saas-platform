@@ -144,6 +144,14 @@ export function Retail() {
     if (saved && saved in INVOICE_TYPE_CONFIGS) return saved as InvoiceType;
     return "TAX_INVOICE";
   });
+  const [productView, setProductView] = useState<"horizontal" | "list" | "grid">(() => {
+    return (
+      (localStorage.getItem("nexus_product_view") as
+        | "horizontal"
+        | "list"
+        | "grid") || "horizontal"
+    );
+  });
 
   // Backward compatibility alias
   const printFormat: "80mm" | "a4" =
@@ -2395,22 +2403,116 @@ export function Retail() {
             </div>
           )}
 
-          {/* Visual Product Grid */}
-          <div className="product-grid">
-            {displayedProducts.map((p) => (
+          {/* View Mode Switcher Header */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              margin: "6px 0 10px 0",
+            }}
+          >
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "#64748b" }}>
+              {template.item_label} Catalogue ({displayedProducts.length})
+            </span>
+            <div className="view-mode-toggle">
               <button
-                className="product-tile"
-                key={p.id}
-                onClick={() => addProductToCart(p, 1)}
+                type="button"
+                className={`view-mode-btn ${
+                  productView === "horizontal" ? "active" : ""
+                }`}
+                onClick={() => {
+                  setProductView("horizontal");
+                  localStorage.setItem("nexus_product_view", "horizontal");
+                }}
+                title="Horizontal Card Tiles (Name left, Price & Stock right)"
               >
-                <b>{p.name}</b>
-                {p.sku && (
-                  <small style={{ color: "#64748b" }}>Code: {p.sku}</small>
-                )}
-                <span>₹{Number(p.selling_price).toFixed(2)}</span>
-                <small>Stock {p.stock_qty}</small>
+                ▤ Horizontal
               </button>
-            ))}
+              <button
+                type="button"
+                className={`view-mode-btn ${
+                  productView === "list" ? "active" : ""
+                }`}
+                onClick={() => {
+                  setProductView("list");
+                  localStorage.setItem("nexus_product_view", "list");
+                }}
+                title="Full-width Horizontal Rows"
+              >
+                ☰ List
+              </button>
+              <button
+                type="button"
+                className={`view-mode-btn ${
+                  productView === "grid" ? "active" : ""
+                }`}
+                onClick={() => {
+                  setProductView("grid");
+                  localStorage.setItem("nexus_product_view", "grid");
+                }}
+                title="Square Grid Tiles"
+              >
+                ▦ Grid
+              </button>
+            </div>
+          </div>
+
+          {/* Product Items Display (Horizontal Cards / List / Grid) */}
+          <div
+            className={`product-grid ${
+              productView === "horizontal"
+                ? "horizontal"
+                : productView === "list"
+                ? "list-view"
+                : ""
+            }`}
+          >
+            {displayedProducts.map((p) =>
+              productView === "grid" ? (
+                <button
+                  className="product-tile"
+                  key={p.id}
+                  onClick={() => addProductToCart(p, 1)}
+                >
+                  <b>{p.name}</b>
+                  {p.sku && (
+                    <small style={{ color: "#64748b" }}>Code: {p.sku}</small>
+                  )}
+                  <span>₹{Number(p.selling_price).toFixed(2)}</span>
+                  <small>Stock {p.stock_qty}</small>
+                </button>
+              ) : (
+                <button
+                  className="product-tile horizontal"
+                  key={p.id}
+                  onClick={() => addProductToCart(p, 1)}
+                  title={`Add ${p.name} - ₹${Number(p.selling_price).toFixed(2)}`}
+                >
+                  <div className="tile-info">
+                    <div className="tile-name">{p.name}</div>
+                    <div className="tile-meta">
+                      {p.sku && <span>Code: {p.sku}</span>}
+                      {p.category_name && (
+                        <span className="cat-badge">{p.category_name}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="tile-pricing">
+                    <div className="tile-price">
+                      ₹{Number(p.selling_price).toFixed(2)}
+                    </div>
+                    <div
+                      className={`tile-stock ${
+                        p.stock_qty < 5 ? "low-stock" : "in-stock"
+                      }`}
+                    >
+                      Stock {p.stock_qty}
+                    </div>
+                  </div>
+                </button>
+              )
+            )}
             {!displayedProducts.length && (
               <p className="muted" style={{ padding: "1rem" }}>
                 No items found. Click "+ Quick Add Item" above to add your first item.

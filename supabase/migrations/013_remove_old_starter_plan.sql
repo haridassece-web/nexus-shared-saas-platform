@@ -7,3 +7,4 @@ DELETE FROM public.subscription_plans WHERE code = 'starter';
 
 -- Reload schema cache
 NOTIFY pgrst, 'reload schema';
+

@@ -63,6 +63,52 @@ router.post("/platform/subscriptions", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(2).max(40),
+        name: z.string().min(2).max(80),
+        monthly_price_paise: z.number().nonnegative(),
+        annual_price_paise: z.number().nonnegative(),
+        max_users: z.number().int().positive(),
+        max_products: z.number().int().positive(),
+        features: z.record(z.any()).default({}),
+      })
+      .parse(req.body);
+    const { data, error } = await req
+      .db!.from("subscription_plans")
+      .upsert(
+        { ...p, is_active: true },
+        { onConflict: "code" }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.delete("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(1),
+      })
+      .parse(req.body);
+    const { error } = await req
+      .db!.from("subscription_plans")
+      .delete()
+      .eq("code", p.code);
+    if (error) throw error;
+    res.json({ success: true, deleted: p.code });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
 
 router.post("/platform/plans", async (req: Request, res: Response) => {
   try {
@@ -140,6 +186,52 @@ router.post("/businesses", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(2).max(40),
+        name: z.string().min(2).max(80),
+        monthly_price_paise: z.number().nonnegative(),
+        annual_price_paise: z.number().nonnegative(),
+        max_users: z.number().int().positive(),
+        max_products: z.number().int().positive(),
+        features: z.record(z.any()).default({}),
+      })
+      .parse(req.body);
+    const { data, error } = await req
+      .db!.from("subscription_plans")
+      .upsert(
+        { ...p, is_active: true },
+        { onConflict: "code" }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.delete("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(1),
+      })
+      .parse(req.body);
+    const { error } = await req
+      .db!.from("subscription_plans")
+      .delete()
+      .eq("code", p.code);
+    if (error) throw error;
+    res.json({ success: true, deleted: p.code });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
 // Categories
 router.get("/categories", async (req: Request, res: Response) => {
   const { data, error } = await req
@@ -166,6 +258,52 @@ router.post("/categories", async (req: Request, res: Response) => {
       .single();
     if (error) throw error;
     res.status(201).json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.post("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(2).max(40),
+        name: z.string().min(2).max(80),
+        monthly_price_paise: z.number().nonnegative(),
+        annual_price_paise: z.number().nonnegative(),
+        max_users: z.number().int().positive(),
+        max_products: z.number().int().positive(),
+        features: z.record(z.any()).default({}),
+      })
+      .parse(req.body);
+    const { data, error } = await req
+      .db!.from("subscription_plans")
+      .upsert(
+        { ...p, is_active: true },
+        { onConflict: "code" }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.delete("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(1),
+      })
+      .parse(req.body);
+    const { error } = await req
+      .db!.from("subscription_plans")
+      .delete()
+      .eq("code", p.code);
+    if (error) throw error;
+    res.json({ success: true, deleted: p.code });
   } catch (e) {
     fail(res, e);
   }
@@ -220,6 +358,52 @@ router.post("/retail/products", async (req: Request, res: Response) => {
       .single();
     if (error) throw error;
     res.status(201).json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.post("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(2).max(40),
+        name: z.string().min(2).max(80),
+        monthly_price_paise: z.number().nonnegative(),
+        annual_price_paise: z.number().nonnegative(),
+        max_users: z.number().int().positive(),
+        max_products: z.number().int().positive(),
+        features: z.record(z.any()).default({}),
+      })
+      .parse(req.body);
+    const { data, error } = await req
+      .db!.from("subscription_plans")
+      .upsert(
+        { ...p, is_active: true },
+        { onConflict: "code" }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.delete("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(1),
+      })
+      .parse(req.body);
+    const { error } = await req
+      .db!.from("subscription_plans")
+      .delete()
+      .eq("code", p.code);
+    if (error) throw error;
+    res.json({ success: true, deleted: p.code });
   } catch (e) {
     fail(res, e);
   }
@@ -290,6 +474,52 @@ router.post("/retail/invoices", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(2).max(40),
+        name: z.string().min(2).max(80),
+        monthly_price_paise: z.number().nonnegative(),
+        annual_price_paise: z.number().nonnegative(),
+        max_users: z.number().int().positive(),
+        max_products: z.number().int().positive(),
+        features: z.record(z.any()).default({}),
+      })
+      .parse(req.body);
+    const { data, error } = await req
+      .db!.from("subscription_plans")
+      .upsert(
+        { ...p, is_active: true },
+        { onConflict: "code" }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.delete("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(1),
+      })
+      .parse(req.body);
+    const { error } = await req
+      .db!.from("subscription_plans")
+      .delete()
+      .eq("code", p.code);
+    if (error) throw error;
+    res.json({ success: true, deleted: p.code });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
 router.get("/customers", async (req: Request, res: Response) => {
   const { data, error } = await req
     .db!.from("customers")
@@ -322,6 +552,52 @@ router.post("/customers", async (req: Request, res: Response) => {
       .single();
     if (error) throw error;
     res.status(201).json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.post("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(2).max(40),
+        name: z.string().min(2).max(80),
+        monthly_price_paise: z.number().nonnegative(),
+        annual_price_paise: z.number().nonnegative(),
+        max_users: z.number().int().positive(),
+        max_products: z.number().int().positive(),
+        features: z.record(z.any()).default({}),
+      })
+      .parse(req.body);
+    const { data, error } = await req
+      .db!.from("subscription_plans")
+      .upsert(
+        { ...p, is_active: true },
+        { onConflict: "code" }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.delete("/platform/plans", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        code: z.string().min(1),
+      })
+      .parse(req.body);
+    const { error } = await req
+      .db!.from("subscription_plans")
+      .delete()
+      .eq("code", p.code);
+    if (error) throw error;
+    res.json({ success: true, deleted: p.code });
   } catch (e) {
     fail(res, e);
   }

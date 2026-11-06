@@ -362,3 +362,131 @@
   display: flex;
   justify-content: space-between;
 }
+
+/* Product Catalog Horizontal & List Views */
+.product-grid.horizontal {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.product-grid.list-view {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.product-tile.horizontal {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 10px 14px !important;
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  text-align: left !important;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.product-tile.horizontal:hover {
+  border-color: #3b82f6 !important;
+  background: #f8fafc !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+}
+
+.product-tile.horizontal .tile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+  padding-right: 12px;
+}
+
+.product-tile.horizontal .tile-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.product-tile.horizontal .tile-meta {
+  font-size: 11px;
+  color: #64748b;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.product-tile.horizontal .cat-badge {
+  font-size: 10px;
+  background: #f1f5f9;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #475569;
+}
+
+.product-tile.horizontal .tile-pricing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.product-tile.horizontal .tile-price {
+  font-size: 15px;
+  font-weight: 800;
+  color: #2563eb;
+}
+
+.product-tile.horizontal .tile-stock {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.product-tile.horizontal .tile-stock.in-stock {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.product-tile.horizontal .tile-stock.low-stock {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.view-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.view-mode-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: #64748b;
+  transition: all 0.15s ease;
+  margin: 0;
+}
+
+.view-mode-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
