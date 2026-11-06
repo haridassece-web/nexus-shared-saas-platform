@@ -263,6 +263,57 @@ router.post("/categories", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/categories/bulk", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        names: z.array(z.string().min(1).max(100)).min(1),
+        description: z.string().max(300).nullable().optional(),
+      })
+      .parse(req.body);
+
+    const uniqueNames = Array.from(new Set(p.names.map((n) => n.trim()).filter(Boolean)));
+    const rows = uniqueNames.map((name) => ({
+      business_id: req.businessId!,
+      name,
+      description: p.description || null,
+    }));
+
+    const { data, error } = await req
+      .db!.from("categories")
+      .upsert(rows, { onConflict: "business_id,name" })
+      .select("id,name,description");
+
+    if (error) throw error;
+    res.status(201).json({ count: data?.length || 0, categories: data || [] });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.delete("/categories/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    // Unlink products in this category first
+    await req
+      .db!.from("products")
+      .update({ category_id: null })
+      .eq("business_id", req.businessId!)
+      .eq("category_id", id);
+
+    const { error } = await req
+      .db!.from("categories")
+      .delete()
+      .eq("business_id", req.businessId!)
+      .eq("id", id);
+
+    if (error) throw error;
+    res.json({ success: true, id });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
 router.post("/platform/plans", async (req: Request, res: Response) => {
   try {
     const p = z
