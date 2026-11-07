@@ -1,6 +1,10 @@
 import { useEffect, useState, FormEvent } from "react";
 import { api } from "../lib/api";
-import { getTemplateForBusinessType } from "../lib/businessTemplates";
+import {
+  getTemplateForBusinessType,
+  BUSINESS_TEMPLATES,
+  BusinessCategoryTemplate,
+} from "../lib/businessTemplates";
 
 type BusinessRow = {
   id: string;
@@ -73,6 +77,125 @@ export function PlatformAdmin() {
     max_users: "5",
     max_products: "1000",
   });
+
+  // 60+ Live Business Demo Mode Control for Super Admin
+  const [demoModeEnabled, setDemoModeEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem("nexus_demo_mode_enabled");
+    return saved === null ? true : saved === "true";
+  });
+  const [selectedDemoKey, setSelectedDemoKey] = useState<string>("supermarket");
+  const [isSeedingAll, setIsSeedingAll] = useState(false);
+
+  function toggleDemoMode() {
+    const next = !demoModeEnabled;
+    setDemoModeEnabled(next);
+    localStorage.setItem("nexus_demo_mode_enabled", String(next));
+    setSuccessMsg(
+      `60+ Live Business Demo Mode is now ${next ? "ENABLED" : "DISABLED"} for the platform.`
+    );
+  }
+
+  function launchDemoTerminal(code: string) {
+    localStorage.setItem("nexus_demo_template", code);
+    window.location.href = "/retail";
+  }
+
+  async function seedAll62DemoWorkspaces() {
+    if (
+      !window.confirm(
+        "Super Admin: Are you sure you want to seed all 62 business templates into the database as demo workspaces? This creates an isolated demo account for every single industry."
+      )
+    ) {
+      return;
+    }
+    setIsSeedingAll(true);
+    setError("");
+    setSuccessMsg("Seeding all 62 demo workspaces… please wait.");
+    try {
+      const list = Object.values(BUSINESS_TEMPLATES);
+      const payload = list.map((t) => ({
+        name: `${t.name} (Demo)`,
+        business_type: t.code,
+      }));
+
+      const res: any = await api("/api/businesses/seed-all", {
+        method: "POST",
+        body: JSON.stringify({ businesses: payload }),
+      });
+
+      setSuccessMsg(
+        `🎉 Successfully seeded ${res.count || list.length} demo workspaces across all 62 industries!`
+      );
+      await load();
+    } catch (e: any) {
+      setError(e.message || "Failed to batch seed demo workspaces");
+    } finally {
+      setIsSeedingAll(false);
+    }
+  }
+
+  function exportAll62SpecsCsv() {
+    const list = Object.values(BUSINESS_TEMPLATES);
+    const headers = [
+      "Code",
+      "Business Name",
+      "Sector",
+      "Template Archetype",
+      "Invoice Prefix",
+      "Customer Label",
+      "Item / Service Label",
+      "Order Types",
+      "Custom Fields",
+      "Starter Items Count",
+      "Starter Items Preview",
+    ];
+
+    const escapeCsv = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const s = String(val).replace(/"/g, '""');
+      return `"${s}"`;
+    };
+
+    const csvRows = [headers.join(",")];
+    list.forEach((t) => {
+      const orderTypesStr = (t.order_types || []).join(" | ");
+      const customFieldsStr = (t.custom_fields || []).map((cf) => cf.label).join(" | ");
+      const itemsPreview = (t.starter_items || [])
+        .map((it) => `${it.name} (₹${it.selling_price})`)
+        .join(" ; ");
+
+      csvRows.push(
+        [
+          escapeCsv(t.code),
+          escapeCsv(t.name),
+          escapeCsv(t.sector),
+          escapeCsv(t.template_type),
+          escapeCsv(t.prefix),
+          escapeCsv(t.customer_label),
+          escapeCsv(t.item_label),
+          escapeCsv(orderTypesStr),
+          escapeCsv(customFieldsStr),
+          t.starter_items ? t.starter_items.length : 0,
+          escapeCsv(itemsPreview),
+        ].join(",")
+      );
+    });
+
+    const blob = new Blob(["\uFEFF" + csvRows.join("\r\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Nexus_62_Business_Engines_Specifications_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  const selectedTemplate: BusinessCategoryTemplate =
+    BUSINESS_TEMPLATES[selectedDemoKey] || BUSINESS_TEMPLATES.supermarket;
 
   async function load() {
     try {
@@ -370,7 +493,21 @@ export function PlatformAdmin() {
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="primary link-btn"
+            style={{
+              background: "#0284c7",
+              color: "#ffffff",
+              fontWeight: 700,
+              fontSize: "13px",
+              padding: "10px 14px",
+            }}
+            onClick={() => window.open("/demo", "_blank")}
+          >
+            🎭 60+ Live Demos
+          </button>
           <button
             type="button"
             className="secondary"
@@ -475,6 +612,227 @@ export function PlatformAdmin() {
               <small>Active Plans</small>
               <strong>{plans.length}</strong>
             </article>
+            <article style={{ background: "#f0f9ff", border: "1px solid #bae6fd" }}>
+              <small style={{ color: "#0369a1", fontWeight: 700 }}>60+ Live Demo Mode</small>
+              <strong style={{ color: "#0284c7" }}>62 Engines</strong>
+              <small style={{ color: "#0369a1", marginTop: "4px" }}>
+                Status: {demoModeEnabled ? "🟢 ENABLED" : "⚪ DISABLED"}
+              </small>
+            </article>
+          </div>
+
+          {/* 60+ Live Business Demo Mode Control Center for Super Admin */}
+          <div
+            className="panel"
+            style={{
+              background: "linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)",
+              border: "1px solid #bfdbfe",
+              borderRadius: "14px",
+              padding: "20px",
+              marginBottom: "2rem",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+                marginBottom: "16px",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                  <span style={{ fontSize: "22px" }}>🎭</span>
+                  <h2 style={{ margin: 0, color: "#1e3a8a", fontSize: "19px" }}>
+                    60+ Live Business Demo Engine · Super Admin Control
+                  </h2>
+                  <span
+                    className="pill"
+                    style={{
+                      background: demoModeEnabled ? "#dcfce7" : "#f1f5f9",
+                      color: demoModeEnabled ? "#15803d" : "#64748b",
+                      fontWeight: 800,
+                      fontSize: "11px",
+                      border: demoModeEnabled ? "1px solid #86efac" : "1px solid #cbd5e1",
+                    }}
+                  >
+                    {demoModeEnabled ? "● DEMO MODE: ENABLED" : "○ DEMO MODE: DISABLED"}
+                  </span>
+                </div>
+                <p className="muted" style={{ margin: 0, fontSize: "13px" }}>
+                  Super Admin control to test, demonstrate, and deploy point-of-sale billing across all 62 pre-configured industries.
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className={demoModeEnabled ? "secondary" : "primary"}
+                  style={{
+                    padding: "7px 14px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    margin: 0,
+                  }}
+                  onClick={toggleDemoMode}
+                >
+                  {demoModeEnabled ? "Disable Demo Mode" : "⚡ Enable Demo Mode"}
+                </button>
+
+                <button
+                  type="button"
+                  className="primary"
+                  style={{
+                    background: "#2563eb",
+                    padding: "7px 14px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    margin: 0,
+                  }}
+                  onClick={seedAll62DemoWorkspaces}
+                  disabled={isSeedingAll}
+                >
+                  {isSeedingAll ? "Seeding…" : "⚡ Seed All 62 Demo Workspaces"}
+                </button>
+
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{
+                    padding: "7px 14px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    margin: 0,
+                  }}
+                  onClick={() => window.open("/demo", "_blank")}
+                >
+                  Open Showroom ↗
+                </button>
+
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{
+                    padding: "7px 14px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    margin: 0,
+                  }}
+                  onClick={exportAll62SpecsCsv}
+                  title="Export all 62 template specifications to CSV for client presentations"
+                >
+                  📋 Export Specs (.csv)
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Industry Tester Card */}
+            {selectedTemplate && (
+              <div
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  padding: "16px",
+                  display: "grid",
+                  gridTemplateColumns: "minmax(280px, 1.2fr) minmax(280px, 1.8fr)",
+                  gap: "18px",
+                }}
+              >
+                <div>
+                  <label style={{ fontWeight: 700, fontSize: "13px", display: "grid", gap: "6px" }}>
+                    Select Industry Engine to Test / Demo:
+                    <select
+                      value={selectedDemoKey}
+                      onChange={(e) => setSelectedDemoKey(e.target.value)}
+                      style={{ padding: "8px 10px", borderRadius: "8px", border: "1px solid #93c5fd" }}
+                    >
+                      {Object.values(BUSINESS_TEMPLATES).map((tmpl) => (
+                        <option key={tmpl.code} value={tmpl.code}>
+                          {tmpl.name} ({tmpl.sector})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div style={{ marginTop: "12px" }}>
+                    <div style={{ display: "flex", gap: "6px", marginBottom: "6px", flexWrap: "wrap" }}>
+                      <span className="pill" style={{ background: "#dbeafe", color: "#1e40af", fontWeight: 700 }}>
+                        {selectedTemplate.sector}
+                      </span>
+                      <span className="pill" style={{ background: "#f1f5f9", color: "#475569" }}>
+                        Prefix: {selectedTemplate.prefix}
+                      </span>
+                      <span className="pill" style={{ background: "#f0fdf4", color: "#166534" }}>
+                        Archetype: {selectedTemplate.template_type}
+                      </span>
+                    </div>
+                    <p style={{ margin: "4px 0", fontSize: "13px", color: "#334155" }}>
+                      Customer: <b>{selectedTemplate.customer_label}</b> · Item: <b>{selectedTemplate.item_label}</b>
+                    </p>
+                    <p style={{ margin: "4px 0", fontSize: "12px", color: "#64748b" }}>
+                      Order Types: {selectedTemplate.order_types?.join(", ") || "Standard"}
+                    </p>
+                  </div>
+
+                  <div style={{ marginTop: "14px", display: "flex", gap: "8px" }}>
+                    <button
+                      type="button"
+                      className="primary"
+                      style={{ padding: "8px 14px", fontSize: "13px", fontWeight: 700, background: "#2563eb" }}
+                      onClick={() => launchDemoTerminal(selectedTemplate.code)}
+                    >
+                      ⚡ Launch Demo POS ({selectedTemplate.name})
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ borderLeft: "1px solid #e2e8f0", paddingLeft: "18px" }}>
+                  <small style={{ fontWeight: 700, color: "#475569", display: "block", marginBottom: "6px" }}>
+                    Custom Invoice Fields ({selectedTemplate.custom_fields?.length || 0}):
+                  </small>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
+                    {selectedTemplate.custom_fields?.map((cf, idx) => (
+                      <span
+                        key={idx}
+                        style={{
+                          background: "#eff6ff",
+                          border: "1px solid #bfdbfe",
+                          padding: "2px 8px",
+                          borderRadius: "4px",
+                          fontSize: "11px",
+                          color: "#1e40af",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {cf.label}
+                      </span>
+                    ))}
+                    {!selectedTemplate.custom_fields?.length && (
+                      <span className="muted" style={{ fontSize: "12px" }}>Standard GST Invoice Fields</span>
+                    )}
+                  </div>
+
+                  <small style={{ fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>
+                    Starter Catalogue Items ({selectedTemplate.starter_items?.length || 0}):
+                  </small>
+                  <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "12px", color: "#334155" }}>
+                    {selectedTemplate.starter_items?.slice(0, 4).map((it, idx) => (
+                      <li key={idx} style={{ marginBottom: "2px" }}>
+                        <b>{it.name}</b> — ₹{it.selling_price} (GST {it.gst_rate}%) [{it.unit}]
+                      </li>
+                    ))}
+                    {(selectedTemplate.starter_items?.length || 0) > 4 && (
+                      <li style={{ listStyle: "none", color: "#64748b", fontSize: "11px", marginTop: "2px" }}>
+                        + {(selectedTemplate.starter_items?.length || 0) - 4} more preloaded items
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Tenants & Subscriptions Management */}
@@ -615,6 +973,26 @@ export function PlatformAdmin() {
                               justifyContent: "flex-end",
                             }}
                           >
+                            <button
+                              type="button"
+                              className="primary"
+                              style={{
+                                padding: "4px 8px",
+                                fontSize: "12px",
+                                margin: 0,
+                                background: "#2563eb",
+                                fontWeight: 700,
+                              }}
+                              title="Open live POS terminal for this business workspace"
+                              onClick={() => {
+                                localStorage.setItem("nexus_business_id", b.id);
+                                localStorage.removeItem("nexus_demo_template");
+                                window.location.href = "/retail";
+                              }}
+                            >
+                              ⚡ POS
+                            </button>
+
                             <button
                               type="button"
                               className="secondary"
