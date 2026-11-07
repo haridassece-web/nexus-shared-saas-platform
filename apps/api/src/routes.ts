@@ -160,15 +160,7 @@ router.post("/businesses", async (req: Request, res: Response) => {
     const p = z
       .object({
         name: z.string().min(2).max(160),
-        business_type: z.enum([
-          "retail",
-          "supermarket",
-          "salon",
-          "gym",
-          "clinic",
-          "barbershop",
-          "general_pos",
-        ]),
+        business_type: z.string().min(1).max(80),
         gstin: z.string().max(15).nullable().optional(),
         state_code: z.string().length(2).optional(),
       })
@@ -181,6 +173,37 @@ router.post("/businesses", async (req: Request, res: Response) => {
     });
     if (error) throw error;
     res.status(201).json(data);
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+router.post("/businesses/seed-all", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        businesses: z.array(
+          z.object({
+            name: z.string().min(2),
+            business_type: z.string().min(1),
+          })
+        ),
+      })
+      .parse(req.body);
+
+    const created: any[] = [];
+    for (const item of p.businesses) {
+      const { data, error } = await req.db!.rpc("create_business", {
+        p_name: item.name,
+        p_type: item.business_type,
+        p_gstin: null,
+        p_state_code: "33",
+      });
+      if (!error && data) {
+        created.push(data);
+      }
+    }
+    res.status(201).json({ count: created.length, businesses: created });
   } catch (e) {
     fail(res, e);
   }

@@ -1,9 +1,11 @@
-import { FormEvent, useEffect, useState, useRef } from "react";
+import { FormEvent, useEffect, useState, useRef, useMemo } from "react";
 import { api } from "../lib/api";
 import { jsPDF } from "jspdf";
+import { useNavigate } from "react-router-dom";
 import {
   getTemplateForBusinessType,
   BusinessCategoryTemplate,
+  BUSINESS_TEMPLATES,
 } from "../lib/businessTemplates";
 import {
   PaperType,
@@ -78,6 +80,7 @@ type PastInvoice = {
 };
 
 export function Retail() {
+  const navigate = useNavigate();
   const bid = localStorage.getItem("nexus_business_id") || "";
   const [business, setBusiness] = useState<any>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -86,10 +89,69 @@ export function Retail() {
   const [lines, setLines] = useState<Line[]>([]);
   const [pastInvoices, setPastInvoices] = useState<PastInvoice[]>([]);
 
-  // Category Template & Archetype Metadata
-  const template: BusinessCategoryTemplate = getTemplateForBusinessType(
-    business?.business_type || "retail_shop"
+  // Demo Template Switcher State (allows previewing all 60+ business templates)
+  const [activeDemoCode, setActiveDemoCode] = useState<string>(
+    () => localStorage.getItem("nexus_demo_template") || ""
   );
+
+  // Category Template & Archetype Metadata
+  const effectiveType = activeDemoCode || business?.business_type || "supermarket";
+  const template: BusinessCategoryTemplate = getTemplateForBusinessType(effectiveType);
+
+  // Demo business sync effect
+  useEffect(() => {
+    if (activeDemoCode) {
+      const tmpl = BUSINESS_TEMPLATES[activeDemoCode];
+      if (tmpl) {
+        setBusiness({
+          id: "demo-" + tmpl.code,
+          name: `${tmpl.name} (Live Demo)`,
+          business_type: tmpl.code,
+          invoice_prefix: tmpl.prefix || "INV",
+          state_code: "33",
+          phone: "9884933079",
+          address: "Live Demo Terminal, Nexus Cloud",
+        });
+        if (tmpl.order_types && tmpl.order_types.length > 0) {
+          setOrderType(tmpl.order_types[0]);
+        }
+        setLines([]);
+      }
+    } else if (!business && !bid) {
+      const tmpl = BUSINESS_TEMPLATES.supermarket;
+      setBusiness({
+        id: "demo-supermarket",
+        name: "Supermarket (Live Demo)",
+        business_type: "supermarket",
+        invoice_prefix: "SMART",
+        state_code: "33",
+        phone: "9884933079",
+        address: "Live Demo Terminal, Nexus Cloud",
+      });
+      if (tmpl.order_types && tmpl.order_types.length > 0) {
+        setOrderType(tmpl.order_types[0]);
+      }
+    }
+  }, [activeDemoCode, bid]);
+
+  // When activeDemoCode is set, or if products table is empty, auto-populate from template starter items!
+  const displayProducts: Product[] = useMemo(() => {
+    if (products.length > 0 && !activeDemoCode) {
+      return products;
+    }
+    return template.starter_items.map((it, idx) => ({
+      id: `demo-${template.code}-${idx + 1}`,
+      name: it.name,
+      sku: `${template.prefix || "ITEM"}-${String(idx + 1).padStart(3, "0")}`,
+      barcode: `890${String(100000000 + idx).slice(1)}`,
+      hsn_code: "9983",
+      selling_price: it.selling_price,
+      gst_rate: it.gst_rate ?? 18,
+      stock_qty: it.stock_qty || 100,
+      category_id: null,
+      category_name: template.name,
+    }));
+  }, [products, activeDemoCode, template]);
 
   // Dynamic Custom Template Fields
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
@@ -211,7 +273,7 @@ export function Retail() {
       setShowDropdown(false);
       return;
     }
-    const matches = products.filter(
+    const matches = displayProducts.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         (p.sku && p.sku.toLowerCase().includes(q)) ||
@@ -219,7 +281,7 @@ export function Retail() {
     );
     setSearchResults(matches);
     setShowDropdown(matches.length > 0);
-  }, [searchTerm, products]);
+  }, [searchTerm, displayProducts]);
 
   function addProductToCart(p: Product, qty: number = 1) {
     setLines((old) => {
@@ -257,10 +319,10 @@ export function Retail() {
     if (!q) return;
 
     // 1. Try exact barcode match
-    let match = products.find((p) => p.barcode && p.barcode.toLowerCase() === q);
+    let match = displayProducts.find((p) => p.barcode && p.barcode.toLowerCase() === q);
     // 2. Try exact SKU/Item Code match
     if (!match) {
-      match = products.find((p) => p.sku && p.sku.toLowerCase() === q);
+      match = displayProducts.find((p) => p.sku && p.sku.toLowerCase() === q);
     }
     // 3. Try exact Name match or first search result
     if (!match && searchResults.length > 0) {
@@ -353,6 +415,15 @@ export function Retail() {
     extraCustomFields.forEach((f) => {
       if (f.key && f.value) combinedCustomFields[f.key] = f.value;
     });
+
+    if (!bid || bid === "demo" || activeDemoCode || business?.id?.startsWith("demo")) {
+      const randomSeq = String(Math.floor(100 + Math.random() * 900));
+      return {
+        id: "demo-inv-" + Date.now(),
+        invoice_number: `${template.prefix || "DEMO"}-2026-${randomSeq}`,
+        created_at: new Date().toISOString(),
+      };
+    }
 
     return api(
       "/api/tenant/retail/invoices",
@@ -1168,11 +1239,81 @@ export function Retail() {
 
   const displayedProducts =
     selectedCat === "all"
-      ? products
-      : products.filter((p) => p.category_id === selectedCat);
+      ? displayProducts
+      : displayProducts.filter((p) => p.category_id === selectedCat);
 
   return (
     <>
+      {/* 60+ Business Live Demo Quick-Switcher Banner */}
+      <div
+        className="panel no-print"
+        style={{
+          background: "linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)",
+          border: "1px solid #bfdbfe",
+          padding: "12px 18px",
+          marginBottom: "16px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "12px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ fontSize: "24px" }}>🎭</span>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <b style={{ color: "#1e40af", fontSize: "15px" }}>60+ Live Business Demo Mode</b>
+              <span className="pill" style={{ background: "#2563eb", color: "#fff", fontWeight: 700 }}>
+                {template.name}
+              </span>
+              <span className="pill" style={{ background: "#f1f5f9", color: "#475569" }}>
+                {template.sector}
+              </span>
+            </div>
+            <p className="muted" style={{ margin: "2px 0 0 0", fontSize: "12px" }}>
+              Custom fields: <b>{template.custom_fields.map((f) => f.label).join(", ") || "Standard"}</b> · Prefix: <b>{template.prefix}</b>
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ fontSize: "12px", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: "6px" }}>
+            <span>Switch Business:</span>
+            <select
+              value={effectiveType}
+              onChange={(e) => {
+                setActiveDemoCode(e.target.value);
+                localStorage.setItem("nexus_demo_template", e.target.value);
+              }}
+              style={{
+                padding: "6px 10px",
+                fontSize: "13px",
+                borderRadius: "8px",
+                border: "1px solid #93c5fd",
+                background: "#ffffff",
+                fontWeight: 600,
+              }}
+            >
+              {Object.values(BUSINESS_TEMPLATES).map((tmpl) => (
+                <option key={tmpl.code} value={tmpl.code}>
+                  {tmpl.name} ({tmpl.sector})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="secondary"
+            style={{ margin: 0, padding: "6px 12px", fontSize: "12px", fontWeight: 600 }}
+            onClick={() => navigate("/demo")}
+          >
+            Showroom (All 62) →
+          </button>
+        </div>
+      </div>
+
       <header className="page-head no-print">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
@@ -1183,10 +1324,9 @@ export function Retail() {
               {template.name} Template
             </span>
           </div>
-          <h1>{business?.name || "Nexus Business Billing"}</h1>
+          <h1>{business?.name || `${template.name} (Live Demo)`}</h1>
           <p className="muted">
-            {business?.invoice_prefix ? `Prefix: ${business.invoice_prefix} · ` : ""}
-            Financial Year Sequence · Isolated Workspace
+            Prefix: {business?.invoice_prefix || template.prefix} · Financial Year Sequence · Isolated Workspace
           </p>
         </div>
         <div style={{ display: "flex", gap: "8px" }}>
@@ -2341,7 +2481,7 @@ export function Retail() {
               onChange={(e) => setSelectedManualId(e.target.value)}
             >
               <option value="">-- Or Pick {template.item_label} from List --</option>
-              {products.map((p) => (
+              {displayProducts.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name} {p.sku ? `(${p.sku})` : ""} — ₹{p.selling_price} (Stock: {p.stock_qty})
                 </option>
@@ -2352,7 +2492,7 @@ export function Retail() {
               className="primary"
               disabled={!selectedManualId}
               onClick={() => {
-                const prod = products.find((p) => p.id === selectedManualId);
+                const prod = displayProducts.find((p) => p.id === selectedManualId);
                 if (prod) addProductToCart(prod, 1);
                 setSelectedManualId("");
               }}
@@ -2382,7 +2522,7 @@ export function Retail() {
                 }}
                 onClick={() => setSelectedCat("all")}
               >
-                All ({products.length})
+                All ({displayProducts.length})
               </button>
               {categories.map((c) => (
                 <button

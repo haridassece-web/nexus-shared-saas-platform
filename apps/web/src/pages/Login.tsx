@@ -84,6 +84,30 @@ export function Login() {
             ? "New customer? Register"
             : "Already registered? Sign in"}
         </button>
+
+        <div style={{ marginTop: "18px", borderTop: "1px solid #e2e8f0", paddingTop: "14px", textAlign: "center" }}>
+          <p className="muted" style={{ fontSize: "12px", margin: "0 0 8px 0" }}>
+            Want to test all 60+ business POS engines on localhost?
+          </p>
+          <button
+            type="button"
+            className="secondary full"
+            style={{
+              margin: 0,
+              background: "#eff6ff",
+              color: "#1d4ed8",
+              border: "1px solid #bfdbfe",
+              fontWeight: 700,
+              padding: "10px",
+            }}
+            onClick={() => {
+              localStorage.setItem("nexus_guest_demo", "true");
+              window.location.href = "/demo";
+            }}
+          >
+            🎭 Instant Live Demo (All 60+ Businesses)
+          </button>
+        </div>
       </form>
     </main>
   );

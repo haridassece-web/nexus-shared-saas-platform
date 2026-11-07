@@ -348,3 +348,4 @@ export function getCategoriesForTemplate(templateCode: string): string[] {
   // Fallback to template name & starter item types
   return [t.name, `${t.name} General`, `${t.name} Services`];
 }
+
