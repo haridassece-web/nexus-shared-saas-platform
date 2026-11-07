@@ -730,13 +730,86 @@ router.get("/retail/reports/sales", async (req: Request, res: Response) => {
     to = String(req.query.to || "2100-01-01");
   const { data, error } = await req
     .db!.from("invoices")
-    .select("id,invoice_number,customer_name,total,payment_method,created_at")
+    .select(
+      "id,invoice_number,customer_name,customer_phone,order_type,subtotal,tax_total,cgst_total,sgst_total,igst_total,total,payment_method,payment_status,custom_fields,created_at,invoice_items(id,description,quantity,unit_price,gst_rate,taxable_amount,tax_amount,line_total,hsn_code)"
+    )
     .eq("business_id", req.businessId!)
     .gte("created_at", `${from}T00:00:00`)
     .lte("created_at", `${to}T23:59:59.999`)
     .order("created_at", { ascending: false });
   if (error) return fail(res, error);
   res.json(data);
+});
+
+router.get("/retail/reports/sales/export.csv", async (req: Request, res: Response) => {
+  try {
+    const from = String(req.query.from || "2000-01-01"),
+      to = String(req.query.to || "2100-01-01");
+    const { data, error } = await req
+      .db!.from("invoices")
+      .select(
+        "id,invoice_number,customer_name,customer_phone,order_type,subtotal,tax_total,cgst_total,sgst_total,igst_total,total,payment_method,payment_status,created_at"
+      )
+      .eq("business_id", req.businessId!)
+      .gte("created_at", `${from}T00:00:00`)
+      .lte("created_at", `${to}T23:59:59.999`)
+      .order("created_at", { ascending: false });
+
+    if (error) return fail(res, error);
+
+    const headers = [
+      "Invoice Number",
+      "Date",
+      "Customer Name",
+      "Customer Phone",
+      "Order Type",
+      "Payment Mode",
+      "Status",
+      "Subtotal (INR)",
+      "CGST (INR)",
+      "SGST (INR)",
+      "IGST (INR)",
+      "Tax Total (INR)",
+      "Grand Total (INR)",
+    ];
+
+    const escapeCsv = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const csvRows = [headers.join(",")];
+    (data || []).forEach((row: any) => {
+      csvRows.push(
+        [
+          escapeCsv(row.invoice_number),
+          escapeCsv(new Date(row.created_at).toLocaleString("en-IN")),
+          escapeCsv(row.customer_name),
+          escapeCsv(row.customer_phone || ""),
+          escapeCsv(row.order_type || "Counter Sale"),
+          escapeCsv(row.payment_method),
+          escapeCsv(row.payment_status || "paid"),
+          Number(row.subtotal || 0).toFixed(2),
+          Number(row.cgst_total || 0).toFixed(2),
+          Number(row.sgst_total || 0).toFixed(2),
+          Number(row.igst_total || 0).toFixed(2),
+          Number(row.tax_total || 0).toFixed(2),
+          Number(row.total || 0).toFixed(2),
+        ].join(",")
+      );
+    });
+
+    const csvContent = "\uFEFF" + csvRows.join("\r\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="sales_report_backup_${new Date().toISOString().slice(0, 10)}.csv"`
+    );
+    res.send(csvContent);
+  } catch (e) {
+    fail(res, e);
+  }
 });
 
 export default router;
