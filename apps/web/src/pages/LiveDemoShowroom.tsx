@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { BUSINESS_TEMPLATES, BusinessCategoryTemplate } from "../lib/businessTemplates";
 import { api } from "../lib/api";
+import { supabase, isSuperAdmin, checkIsAdmin } from "../lib/supabase";
 
 const SECTORS = [
   { id: "all", label: "✨ All Businesses", count: 62 },
@@ -24,6 +25,21 @@ export function LiveDemoShowroom() {
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      const user = data.user;
+      if (!user) {
+        navigate("/");
+        return;
+      }
+      if (!isSuperAdmin(user)) {
+        checkIsAdmin(user).then((admin) => {
+          if (!admin) navigate("/");
+        });
+      }
+    });
+  }, [navigate]);
 
   const templatesList: BusinessCategoryTemplate[] = useMemo(() => {
     return Object.values(BUSINESS_TEMPLATES);

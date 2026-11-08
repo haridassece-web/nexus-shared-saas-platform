@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState, useRef, useMemo } from "react";
 import { api } from "../lib/api";
 import { jsPDF } from "jspdf";
 import { useNavigate } from "react-router-dom";
+import { supabase, isSuperAdmin, checkIsAdmin } from "../lib/supabase";
 import {
   getTemplateForBusinessType,
   BusinessCategoryTemplate,
@@ -82,6 +83,7 @@ type PastInvoice = {
 export function Retail() {
   const navigate = useNavigate();
   const bid = localStorage.getItem("nexus_business_id") || "";
+  const [isAdmin, setIsAdmin] = useState(false);
   const [business, setBusiness] = useState<any>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -89,10 +91,33 @@ export function Retail() {
   const [lines, setLines] = useState<Line[]>([]);
   const [pastInvoices, setPastInvoices] = useState<PastInvoice[]>([]);
 
-  // Demo Template Switcher State (allows previewing all 60+ business templates)
+  // Demo Template Switcher State (allows previewing all 60+ business templates - Super Admin only)
   const [activeDemoCode, setActiveDemoCode] = useState<string>(
     () => localStorage.getItem("nexus_demo_template") || ""
   );
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      const user = data.user;
+      if (user) {
+        if (isSuperAdmin(user)) {
+          setIsAdmin(true);
+        } else {
+          checkIsAdmin(user).then((admin) => {
+            setIsAdmin(admin);
+            if (!admin) {
+              setActiveDemoCode("");
+              localStorage.removeItem("nexus_demo_template");
+            }
+          });
+        }
+      } else {
+        setIsAdmin(false);
+        setActiveDemoCode("");
+        localStorage.removeItem("nexus_demo_template");
+      }
+    });
+  }, []);
 
   // Category Template & Archetype Metadata
   const effectiveType = activeDemoCode || business?.business_type || "supermarket";
@@ -1244,75 +1269,77 @@ export function Retail() {
 
   return (
     <>
-      {/* 60+ Business Live Demo Quick-Switcher Banner */}
-      <div
-        className="panel no-print"
-        style={{
-          background: "linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)",
-          border: "1px solid #bfdbfe",
-          padding: "12px 18px",
-          marginBottom: "16px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: "12px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ fontSize: "24px" }}>🎭</span>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <b style={{ color: "#1e40af", fontSize: "15px" }}>60+ Live Business Demo Mode</b>
-              <span className="pill" style={{ background: "#2563eb", color: "#fff", fontWeight: 700 }}>
-                {template.name}
-              </span>
-              <span className="pill" style={{ background: "#f1f5f9", color: "#475569" }}>
-                {template.sector}
-              </span>
+      {/* 60+ Business Live Demo Quick-Switcher Banner (Super Admin Only) */}
+      {isAdmin && (
+        <div
+          className="panel no-print"
+          style={{
+            background: "linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)",
+            border: "1px solid #bfdbfe",
+            padding: "12px 18px",
+            marginBottom: "16px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "12px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "24px" }}>🎭</span>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <b style={{ color: "#1e40af", fontSize: "15px" }}>60+ Live Business Demo Mode</b>
+                <span className="pill" style={{ background: "#2563eb", color: "#fff", fontWeight: 700 }}>
+                  {template.name}
+                </span>
+                <span className="pill" style={{ background: "#f1f5f9", color: "#475569" }}>
+                  {template.sector}
+                </span>
+              </div>
+              <p className="muted" style={{ margin: "2px 0 0 0", fontSize: "12px" }}>
+                Custom fields: <b>{template.custom_fields.map((f) => f.label).join(", ") || "Standard"}</b> · Prefix: <b>{template.prefix}</b>
+              </p>
             </div>
-            <p className="muted" style={{ margin: "2px 0 0 0", fontSize: "12px" }}>
-              Custom fields: <b>{template.custom_fields.map((f) => f.label).join(", ") || "Standard"}</b> · Prefix: <b>{template.prefix}</b>
-            </p>
+          </div>
+
+          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+            <label style={{ fontSize: "12px", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: "6px" }}>
+              <span>Switch Business:</span>
+              <select
+                value={effectiveType}
+                onChange={(e) => {
+                  setActiveDemoCode(e.target.value);
+                  localStorage.setItem("nexus_demo_template", e.target.value);
+                }}
+                style={{
+                  padding: "6px 10px",
+                  fontSize: "13px",
+                  borderRadius: "8px",
+                  border: "1px solid #93c5fd",
+                  background: "#ffffff",
+                  fontWeight: 600,
+                }}
+              >
+                {Object.values(BUSINESS_TEMPLATES).map((tmpl) => (
+                  <option key={tmpl.code} value={tmpl.code}>
+                    {tmpl.name} ({tmpl.sector})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              className="secondary"
+              style={{ margin: 0, padding: "6px 12px", fontSize: "12px", fontWeight: 600 }}
+              onClick={() => navigate("/demo")}
+            >
+              Showroom (All 62) →
+            </button>
           </div>
         </div>
-
-        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-          <label style={{ fontSize: "12px", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: "6px" }}>
-            <span>Switch Business:</span>
-            <select
-              value={effectiveType}
-              onChange={(e) => {
-                setActiveDemoCode(e.target.value);
-                localStorage.setItem("nexus_demo_template", e.target.value);
-              }}
-              style={{
-                padding: "6px 10px",
-                fontSize: "13px",
-                borderRadius: "8px",
-                border: "1px solid #93c5fd",
-                background: "#ffffff",
-                fontWeight: 600,
-              }}
-            >
-              {Object.values(BUSINESS_TEMPLATES).map((tmpl) => (
-                <option key={tmpl.code} value={tmpl.code}>
-                  {tmpl.name} ({tmpl.sector})
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <button
-            type="button"
-            className="secondary"
-            style={{ margin: 0, padding: "6px 12px", fontSize: "12px", fontWeight: 600 }}
-            onClick={() => navigate("/demo")}
-          >
-            Showroom (All 62) →
-          </button>
-        </div>
-      </div>
+      )}
 
       <header className="page-head no-print">
         <div>

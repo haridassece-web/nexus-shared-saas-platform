@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, Link } from "react-router-dom";
-import { supabase } from "./lib/supabase";
+import { supabase, checkIsAdmin, isSuperAdmin } from "./lib/supabase";
 import { Login } from "./pages/Login";
 import { Workspace } from "./pages/Workspace";
 import { BusinessSetup } from "./pages/BusinessSetup";
@@ -14,17 +14,36 @@ import { LiveDemoShowroom } from "./pages/LiveDemoShowroom";
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [ready, setReady] = useState(false);
-  const isGuestDemo = localStorage.getItem("nexus_guest_demo") === "true";
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      if (data.session?.user) {
+        if (isSuperAdmin(data.session.user)) {
+          setIsAdmin(true);
+        } else {
+          checkIsAdmin(data.session.user).then(setIsAdmin);
+        }
+      } else {
+        setIsAdmin(false);
+      }
       setReady(true);
     });
-    const { data: l } = supabase.auth.onAuthStateChange((_e, s) =>
-      setSession(s)
-    );
+
+    const { data: l } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s);
+      if (s?.user) {
+        if (isSuperAdmin(s.user)) {
+          setIsAdmin(true);
+        } else {
+          checkIsAdmin(s.user).then(setIsAdmin);
+        }
+      } else {
+        setIsAdmin(false);
+      }
+    });
     return () => l.subscription.unsubscribe();
   }, []);
 
@@ -35,7 +54,7 @@ export default function App() {
   }
 
   if (!ready) return <main className="center">Loading Nexus Cloud…</main>;
-  if (!session && !isGuestDemo) return <Login />;
+  if (!session) return <Login />;
 
   return (
     <div className="shell">
@@ -45,17 +64,19 @@ export default function App() {
           <small>SHARED SaaS PLATFORM</small>
         </div>
         <nav>
-          <Link
-            to="/demo"
-            style={{
-              color: "#38bdf8",
-              fontWeight: 800,
-              background: "rgba(56, 189, 248, 0.12)",
-              border: "1px solid rgba(56, 189, 248, 0.3)",
-            }}
-          >
-            🎭 60+ Live Demos
-          </Link>
+          {isAdmin && (
+            <Link
+              to="/demo"
+              style={{
+                color: "#38bdf8",
+                fontWeight: 800,
+                background: "rgba(56, 189, 248, 0.12)",
+                border: "1px solid rgba(56, 189, 248, 0.3)",
+              }}
+            >
+              🎭 60+ Live Demos
+            </Link>
+          )}
           <Link to="/">Workspace</Link>
           <Link to="/setup">Add business</Link>
           <Link to="/retail">Retail Billing</Link>
@@ -63,17 +84,20 @@ export default function App() {
           <Link to="/reports">Sales Reports</Link>
           <Link to="/branding">Invoice Branding</Link>
           <Link to="/subscription">Subscription</Link>
-          <Link to="/platform">Super Admin</Link>
+          {isAdmin && <Link to="/platform">Super Admin</Link>}
         </nav>
         <button className="logout" onClick={handleSignOut}>
-          {isGuestDemo && !session ? "Exit Demo Mode" : "Sign out"}
+          Sign out
         </button>
         <small className="muted">Connecting Businesses. Empowering Growth.</small>
       </aside>
 
       <main className="content">
         <Routes>
-          <Route path="/demo" element={<LiveDemoShowroom />} />
+          <Route
+            path="/demo"
+            element={isAdmin ? <LiveDemoShowroom /> : <Navigate to="/" />}
+          />
           <Route path="/" element={<Workspace />} />
           <Route path="/setup" element={<BusinessSetup />} />
           <Route path="/retail" element={<Retail />} />
@@ -88,8 +112,11 @@ export default function App() {
               />
             }
           />
-          <Route path="/platform" element={<PlatformAdmin />} />
-          <Route path="*" element={<Navigate to="/demo" />} />
+          <Route
+            path="/platform"
+            element={isAdmin ? <PlatformAdmin /> : <Navigate to="/" />}
+          />
+          <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
     </div>

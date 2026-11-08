@@ -1,5 +1,7 @@
 import { useEffect, useState, FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { supabase, isSuperAdmin, checkIsAdmin } from "../lib/supabase";
 import {
   getTemplateForBusinessType,
   BUSINESS_TEMPLATES,
@@ -13,6 +15,8 @@ type BusinessRow = {
   invoice_prefix?: string;
   created_at: string;
   owner_count: number;
+  owner_email?: string;
+  all_user_emails?: string;
   subscription?: {
     id: string;
     plan_code: string;
@@ -48,6 +52,7 @@ type Plan = {
 };
 
 export function PlatformAdmin() {
+  const navigate = useNavigate();
   const [data, setData] = useState<Overview | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [error, setError] = useState("");
@@ -57,6 +62,22 @@ export function PlatformAdmin() {
   // Search & Filter
   const [filterQuery, setFilterQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  // Admin Access Guard: only Super Admin can access this panel
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      const user = data.user;
+      if (!user) {
+        navigate("/");
+        return;
+      }
+      if (!isSuperAdmin(user)) {
+        checkIsAdmin(user).then((admin) => {
+          if (!admin) navigate("/");
+        });
+      }
+    });
+  }, [navigate]);
 
   // Modal: Add / Modify Tenant Subscription
   const [subModalTarget, setSubModalTarget] = useState<BusinessRow | null>(null);
@@ -277,6 +298,105 @@ export function PlatformAdmin() {
     }
   }
 
+  // 1-Click Activate Account for Super Admin
+  async function handleQuickActivate(
+    biz: BusinessRow,
+    planCode: string = "starter",
+    period: "monthly" | "annual" | "lifetime" = "monthly"
+  ) {
+    setBusy(`act_${biz.id}`);
+    setError("");
+    setSuccessMsg("");
+    try {
+      await api("/api/platform/subscriptions/activate", {
+        method: "POST",
+        body: JSON.stringify({
+          business_id: biz.id,
+          plan_code: planCode,
+          period,
+        }),
+      });
+      setSuccessMsg(
+        `⚡ Activated "${biz.name}" on ${planCode.toUpperCase()} (${period === "lifetime" ? "Lifetime Access" : period === "annual" ? "1 Year" : "1 Month"})!`
+      );
+      await load();
+    } catch (e: any) {
+      setError(e.message || "Failed to activate account");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  // 1-Click Activate All Inactive / Expired Accounts
+  async function handleActivateAllInactive() {
+    const inactive = (data?.businesses || []).filter(
+      (b) => !b.subscription || b.subscription.status !== "active"
+    );
+    if (!inactive.length) {
+      alert("All tenant accounts are already active!");
+      return;
+    }
+    const confirmAct = window.confirm(
+      `⚡ Super Admin: Activate all ${inactive.length} pending / expired / trialing account(s) to STARTER Plan (1 Month Active)?`
+    );
+    if (!confirmAct) return;
+
+    setBusy("activate_all");
+    setError("");
+    setSuccessMsg(`Activating ${inactive.length} accounts… please wait.`);
+    try {
+      const res: any = await api("/api/platform/subscriptions/activate-batch", {
+        method: "POST",
+        body: JSON.stringify({
+          business_ids: inactive.map((b) => b.id),
+          plan_code: "starter",
+          period: "monthly",
+        }),
+      });
+      setSuccessMsg(
+        `🎉 Successfully activated ${res.count || inactive.length} accounts to STARTER Plan (1 Month)!`
+      );
+      await load();
+    } catch (e: any) {
+      setError(e.message || "Failed to batch activate accounts");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  // Quick Extend Subscription by +30 Days or +1 Year
+  async function handleExtendSubscription(biz: BusinessRow, days: number) {
+    setBusy(`ext_${biz.id}`);
+    setError("");
+    setSuccessMsg("");
+    try {
+      const currentEnds =
+        biz.subscription?.ends_at && new Date(biz.subscription.ends_at).getTime() > Date.now()
+          ? new Date(biz.subscription.ends_at).getTime()
+          : Date.now();
+      const newEndsAt = new Date(currentEnds + days * 86400000).toISOString();
+
+      await api("/api/platform/subscriptions", {
+        method: "POST",
+        body: JSON.stringify({
+          business_id: biz.id,
+          plan_code: biz.subscription?.plan_code || "starter",
+          status: "active",
+          period: "custom",
+          ends_at: newEndsAt,
+        }),
+      });
+      setSuccessMsg(
+        `Extended validity for "${biz.name}" by ${days} days (Valid until ${new Date(newEndsAt).toLocaleDateString("en-IN")}).`
+      );
+      await load();
+    } catch (e: any) {
+      setError(e.message || "Failed to extend subscription");
+    } finally {
+      setBusy("");
+    }
+  }
+
   // 2. Delete / Revoke Subscription
   async function handleDeleteSubscription(biz: BusinessRow) {
     const confirmDelete = window.confirm(
@@ -413,6 +533,10 @@ export function PlatformAdmin() {
     }
   }
 
+  const inactiveCount = (data?.businesses || []).filter(
+    (b) => !b.subscription || b.subscription.status !== "active"
+  ).length;
+
   // Filter businesses
   const filteredBusinesses = (data?.businesses || []).filter((b) => {
     const q = filterQuery.toLowerCase().trim();
@@ -420,6 +544,7 @@ export function PlatformAdmin() {
       !q ||
       b.name.toLowerCase().includes(q) ||
       b.business_type.toLowerCase().includes(q) ||
+      (b.owner_email && b.owner_email.toLowerCase().includes(q)) ||
       (b.invoice_prefix && b.invoice_prefix.toLowerCase().includes(q)) ||
       (b.subscription?.plan_code && b.subscription.plan_code.toLowerCase().includes(q));
 
@@ -428,7 +553,8 @@ export function PlatformAdmin() {
       statusFilter === "all" ||
       (statusFilter === "active" && status === "active") ||
       (statusFilter === "trialing" && status === "trialing") ||
-      (statusFilter === "expired" && (status === "expired" || status === "cancelled"));
+      (statusFilter === "expired" && (status === "expired" || status === "cancelled")) ||
+      (statusFilter === "inactive" && status !== "active");
 
     return matchesQuery && matchesStatus;
   });
@@ -848,17 +974,53 @@ export function PlatformAdmin() {
               }}
             >
               <div>
-                <h2 style={{ margin: 0 }}>Tenant Subscriptions ({filteredBusinesses.length})</h2>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <h2 style={{ margin: 0 }}>Tenant Subscriptions ({filteredBusinesses.length})</h2>
+                  {inactiveCount > 0 && (
+                    <span
+                      className="pill"
+                      style={{
+                        background: "#fee2e2",
+                        color: "#b91c1c",
+                        fontWeight: 700,
+                        fontSize: "11px",
+                      }}
+                    >
+                      {inactiveCount} Awaiting Activation
+                    </span>
+                  )}
+                </div>
                 <small className="muted">
-                  Super Admin subscription overrides, upgrades, and cancellations
+                  Super Admin 1-click commercial account activation, overrides, and license management
                 </small>
               </div>
 
-              {/* Filters */}
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              {/* Filters & Bulk Activate */}
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                {inactiveCount > 0 && (
+                  <button
+                    type="button"
+                    className="primary"
+                    style={{
+                      background: "#16a34a",
+                      borderColor: "#15803d",
+                      fontWeight: 700,
+                      padding: "6px 14px",
+                      fontSize: "12px",
+                      margin: 0,
+                    }}
+                    disabled={busy === "activate_all"}
+                    onClick={handleActivateAllInactive}
+                    title="Activate all inactive/expired accounts to Starter 1-Month"
+                  >
+                    {busy === "activate_all"
+                      ? "Activating…"
+                      : `⚡ 1-Click Activate All Inactive (${inactiveCount})`}
+                  </button>
+                )}
                 <input
-                  style={{ width: "220px", padding: "6px 10px", fontSize: "13px" }}
-                  placeholder="🔍 Search Business, Prefix, Plan..."
+                  style={{ width: "200px", padding: "6px 10px", fontSize: "13px" }}
+                  placeholder="🔍 Search Business, Email, Prefix..."
                   value={filterQuery}
                   onChange={(e) => setFilterQuery(e.target.value)}
                 />
@@ -867,10 +1029,11 @@ export function PlatformAdmin() {
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
-                  <option value="all">All Statuses</option>
-                  <option value="active">Active Only</option>
-                  <option value="trialing">Trialing Only</option>
-                  <option value="expired">Expired Only</option>
+                  <option value="all">All Statuses ({data?.businesses.length || 0})</option>
+                  <option value="active">Active Only ({data?.summary.active || 0})</option>
+                  <option value="trialing">Trialing Only ({data?.summary.trialing || 0})</option>
+                  <option value="expired">Expired Only ({data?.summary.expired || 0})</option>
+                  <option value="inactive">Inactive / Due ({inactiveCount})</option>
                 </select>
               </div>
             </div>
@@ -879,12 +1042,13 @@ export function PlatformAdmin() {
               <table>
                 <thead>
                   <tr>
-                    <th>Business</th>
+                    <th>Business & Owner Account</th>
                     <th>Category</th>
                     <th>Prefix</th>
                     <th>Plan</th>
                     <th>Status</th>
                     <th>Validity End</th>
+                    <th style={{ minWidth: "190px" }}>⚡ 1-Click Account Activation</th>
                     <th style={{ textAlign: "right" }}>Super Admin Actions</th>
                   </tr>
                 </thead>
@@ -903,6 +1067,15 @@ export function PlatformAdmin() {
                           <small className="muted" style={{ display: "block" }}>
                             ID: {b.id.slice(0, 8)}…
                           </small>
+                          {b.owner_email ? (
+                            <small style={{ color: "#2563eb", fontWeight: 600, display: "block", marginTop: "2px" }}>
+                              👤 {b.owner_email}
+                            </small>
+                          ) : (
+                            <small className="muted" style={{ display: "block", marginTop: "2px" }}>
+                              👤 {b.owner_count || 1} admin user
+                            </small>
+                          )}
                         </td>
                         <td>
                           <span className="pill" style={{ background: "#f1f5f9" }}>
@@ -963,6 +1136,127 @@ export function PlatformAdmin() {
                             })
                           ) : (
                             <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td>
+                          {status !== "active" ? (
+                            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", alignItems: "center" }}>
+                              <button
+                                type="button"
+                                className="primary"
+                                style={{
+                                  padding: "4px 8px",
+                                  fontSize: "11px",
+                                  margin: 0,
+                                  background: "#16a34a",
+                                  borderColor: "#15803d",
+                                  fontWeight: 800,
+                                }}
+                                disabled={busy === `act_${b.id}`}
+                                title="Activate Account on 1-Month Starter Plan"
+                                onClick={() => handleQuickActivate(b, "starter", "monthly")}
+                              >
+                                {busy === `act_${b.id}` ? "…" : "⚡ 1-Mo Starter"}
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary"
+                                style={{
+                                  padding: "4px 6px",
+                                  fontSize: "11px",
+                                  margin: 0,
+                                  background: "#f0fdf4",
+                                  color: "#166534",
+                                  fontWeight: 700,
+                                }}
+                                disabled={busy === `act_${b.id}`}
+                                title="Activate Account on 1-Year Business Plan"
+                                onClick={() => handleQuickActivate(b, "business", "annual")}
+                              >
+                                1-Yr Biz
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary"
+                                style={{
+                                  padding: "4px 6px",
+                                  fontSize: "11px",
+                                  margin: 0,
+                                  background: "#eff6ff",
+                                  color: "#1e40af",
+                                  fontWeight: 700,
+                                }}
+                                disabled={busy === `act_${b.id}`}
+                                title="Grant Permanent Lifetime Commercial License"
+                                onClick={() => handleQuickActivate(b, "business", "lifetime")}
+                              >
+                                ♾️
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", alignItems: "center" }}>
+                              <span
+                                className="pill"
+                                style={{
+                                  background: "#dcfce7",
+                                  color: "#166534",
+                                  fontWeight: 800,
+                                  fontSize: "11px",
+                                }}
+                              >
+                                ✓ ACTIVE
+                              </span>
+                              <button
+                                type="button"
+                                className="secondary"
+                                style={{
+                                  padding: "3px 6px",
+                                  fontSize: "11px",
+                                  margin: 0,
+                                  color: "#2563eb",
+                                  fontWeight: 700,
+                                }}
+                                disabled={busy === `ext_${b.id}`}
+                                title="Extend validity by 30 days"
+                                onClick={() => handleExtendSubscription(b, 30)}
+                              >
+                                +30d
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary"
+                                style={{
+                                  padding: "3px 6px",
+                                  fontSize: "11px",
+                                  margin: 0,
+                                  color: "#16a34a",
+                                  fontWeight: 700,
+                                }}
+                                disabled={busy === `ext_${b.id}`}
+                                title="Extend validity by 1 year"
+                                onClick={() => handleExtendSubscription(b, 365)}
+                              >
+                                +1yr
+                              </button>
+                              {!isLifetime && (
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  style={{
+                                    padding: "3px 6px",
+                                    fontSize: "11px",
+                                    margin: 0,
+                                    color: "#7c3aed",
+                                    fontWeight: 700,
+                                  }}
+                                  disabled={busy === `act_${b.id}`}
+                                  title="Upgrade to Lifetime License"
+                                  onClick={() => handleQuickActivate(b, b.subscription?.plan_code || "business", "lifetime")}
+                                >
+                                  ♾️
+                                </button>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td>
@@ -1057,7 +1351,7 @@ export function PlatformAdmin() {
                   })}
                   {!filteredBusinesses.length && (
                     <tr>
-                      <td colSpan={7} style={{ textAlign: "center", padding: "2rem" }}>
+                      <td colSpan={8} style={{ textAlign: "center", padding: "2rem" }}>
                         <p className="muted">No businesses found matching criteria.</p>
                       </td>
                     </tr>

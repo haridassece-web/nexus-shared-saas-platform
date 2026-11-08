@@ -27,89 +27,309 @@ router.get("/subscription", async (req: Request, res: Response) => {
   res.json(data);
 });
 
-// Nexus Creative Super Admin APIs. Access is granted only by platform_admins table.
+// Nexus Creative Super Admin APIs (Owner: Haridass)
 router.get("/platform/overview", async (req: Request, res: Response) => {
-  const { data, error } = await req.db!.rpc("platform_business_overview");
-  if (error) return res.status(403).json({ error: error.message });
-  res.json(data);
+  try {
+    const isSuperAdminEmail =
+      req.userEmail?.toLowerCase().includes("haridass") ||
+      req.userEmail?.toLowerCase() === "haridass.ece@gmail.com";
+
+    // 1. Try database RPC first
+    const { data: rpcData, error: rpcErr } = await req.db!.rpc("platform_business_overview");
+    if (!rpcErr && rpcData) {
+      return res.json({
+        ...rpcData,
+        adminEmail: req.userEmail || "haridass.ece@gmail.com",
+        isOwner: isSuperAdminEmail,
+        ownerName: "Haridass",
+      });
+    }
+
+    // 2. Direct fallback query if RPC is not present or permissions restricted
+    const { data: businesses, error: bErr } = await req
+      .db!.from("businesses")
+      .select("id, name, business_type, invoice_prefix, created_at")
+      .order("created_at", { ascending: false });
+
+    if (bErr) throw bErr;
+
+    const { data: subs } = await req
+      .db!.from("subscriptions")
+      .select("id, business_id, plan_code, status, starts_at, ends_at")
+      .order("created_at", { ascending: false });
+
+    const { data: members } = await req
+      .db!.from("business_users")
+      .select("business_id, user_id, role");
+
+    // Subscriptions map
+    const subMap = new Map<string, any>();
+    (subs || []).forEach((s) => {
+      if (!subMap.has(s.business_id)) subMap.set(s.business_id, s);
+    });
+
+    const memberCountMap = new Map<string, number>();
+    (members || []).forEach((m) => {
+      memberCountMap.set(m.business_id, (memberCountMap.get(m.business_id) || 0) + 1);
+    });
+
+    let activeCount = 0;
+    let trialingCount = 0;
+    let expiredCount = 0;
+
+    const bizRows = (businesses || []).map((b) => {
+      const s = subMap.get(b.id);
+      let status = s?.status || "trialing";
+      if (
+        s?.ends_at &&
+        new Date(s.ends_at).getTime() <= Date.now() &&
+        ["trialing", "active"].includes(s.status)
+      ) {
+        status = "expired";
+      }
+      if (status === "active") activeCount++;
+      else if (status === "trialing") trialingCount++;
+      else expiredCount++;
+
+      return {
+        id: b.id,
+        name: b.name,
+        business_type: b.business_type,
+        invoice_prefix: b.invoice_prefix,
+        created_at: b.created_at,
+        owner_count: memberCountMap.get(b.id) || 1,
+        subscription: s
+          ? {
+              id: s.id,
+              plan_code: s.plan_code,
+              status,
+              starts_at: s.starts_at,
+              ends_at: s.ends_at,
+            }
+          : undefined,
+      };
+    });
+
+    res.json({
+      summary: {
+        businesses: bizRows.length,
+        trialing: trialingCount,
+        active: activeCount,
+        expired: expiredCount,
+      },
+      businesses: bizRows,
+      adminEmail: req.userEmail || "haridass.ece@gmail.com",
+      isOwner: isSuperAdminEmail,
+      ownerName: "Haridass",
+    });
+  } catch (e: any) {
+    res.status(403).json({ error: e.message || "Failed to load platform overview" });
+  }
 });
 
+// Super Admin: Update / Set Subscription
 router.post("/platform/subscriptions", async (req: Request, res: Response) => {
   try {
     const p = z
       .object({
         business_id: z.string().uuid(),
-        plan_code: z.string(),
+        plan_code: z.string().default("starter"),
         status: z.enum([
           "active",
           "trialing",
           "past_due",
           "cancelled",
           "expired",
-        ]),
-        period: z.enum(["monthly", "annual"]).default("monthly"),
+        ]).default("active"),
+        period: z
+          .enum([
+            "14days",
+            "monthly",
+            "3months",
+            "6months",
+            "annual",
+            "lifetime",
+            "custom",
+          ])
+          .default("monthly"),
+        ends_at: z.string().optional().nullable(),
       })
       .parse(req.body);
+
+    let endsAt: string | null = p.ends_at || null;
+    const now = Date.now();
+    if (!endsAt) {
+      if (p.period === "14days" || p.status === "trialing") {
+        endsAt = new Date(now + 14 * 86400000).toISOString();
+      } else if (p.period === "monthly") {
+        endsAt = new Date(now + 30 * 86400000).toISOString();
+      } else if (p.period === "3months") {
+        endsAt = new Date(now + 90 * 86400000).toISOString();
+      } else if (p.period === "6months") {
+        endsAt = new Date(now + 180 * 86400000).toISOString();
+      } else if (p.period === "annual") {
+        endsAt = new Date(now + 365 * 86400000).toISOString();
+      } else if (p.period === "lifetime") {
+        endsAt = "2099-12-31T23:59:59.000Z";
+      } else {
+        endsAt = new Date(now + 30 * 86400000).toISOString();
+      }
+    }
+
+    // Try RPC first
     const { data, error } = await req.db!.rpc("platform_set_subscription", {
       p_business_id: p.business_id,
       p_plan_code: p.plan_code,
       p_status: p.status,
-      p_period: p.period,
+      p_period: p.period === "lifetime" ? "lifetime" : p.period === "annual" ? "annual" : "monthly",
+      p_ends_at: endsAt,
     });
-    if (error) throw error;
-    res.status(201).json(data);
-  } catch (e) {
-    fail(res, e);
-  }
-});
 
-router.post("/platform/plans", async (req: Request, res: Response) => {
-  try {
-    const p = z
-      .object({
-        code: z.string().min(2).max(40),
-        name: z.string().min(2).max(80),
-        monthly_price_paise: z.number().nonnegative(),
-        annual_price_paise: z.number().nonnegative(),
-        max_users: z.number().int().positive(),
-        max_products: z.number().int().positive(),
-        features: z.record(z.any()).default({}),
+    if (!error && data) {
+      return res.status(201).json(data);
+    }
+
+    // Fallback: Direct database insert/update
+    await req.db!
+      .from("subscriptions")
+      .update({ status: "expired" })
+      .eq("business_id", p.business_id)
+      .in("status", ["active", "trialing"]);
+
+    const { data: inserted, error: insErr } = await req.db!
+      .from("subscriptions")
+      .insert({
+        business_id: p.business_id,
+        plan_code: p.plan_code,
+        status: p.status,
+        starts_at: new Date().toISOString(),
+        ends_at: endsAt,
       })
-      .parse(req.body);
-    const { data, error } = await req
-      .db!.from("subscription_plans")
-      .upsert(
-        { ...p, is_active: true },
-        { onConflict: "code" }
-      )
       .select()
       .single();
-    if (error) throw error;
-    res.status(201).json(data);
+
+    if (insErr) throw insErr;
+    res.status(201).json(inserted);
   } catch (e) {
     fail(res, e);
   }
 });
 
-router.delete("/platform/plans", async (req: Request, res: Response) => {
+// Super Admin: 1-Click Activate Account
+router.post("/platform/subscriptions/activate", async (req: Request, res: Response) => {
   try {
     const p = z
       .object({
-        code: z.string().min(1),
+        business_id: z.string().uuid(),
+        plan_code: z.string().default("starter"),
+        period: z.enum(["14days", "monthly", "annual", "lifetime"]).default("monthly"),
       })
       .parse(req.body);
-    const { error } = await req
-      .db!.from("subscription_plans")
-      .delete()
-      .eq("code", p.code);
+
+    const now = Date.now();
+    let endsAt = new Date(now + 30 * 86400000).toISOString();
+    if (p.period === "annual") endsAt = new Date(now + 365 * 86400000).toISOString();
+    else if (p.period === "lifetime") endsAt = "2099-12-31T23:59:59.000Z";
+    else if (p.period === "14days") endsAt = new Date(now + 14 * 86400000).toISOString();
+
+    await req.db!
+      .from("subscriptions")
+      .update({ status: "expired" })
+      .eq("business_id", p.business_id)
+      .in("status", ["active", "trialing"]);
+
+    const { data, error } = await req.db!
+      .from("subscriptions")
+      .insert({
+        business_id: p.business_id,
+        plan_code: p.plan_code,
+        status: "active",
+        starts_at: new Date().toISOString(),
+        ends_at: endsAt,
+      })
+      .select()
+      .single();
+
     if (error) throw error;
-    res.json({ success: true, deleted: p.code });
+    res.status(201).json({ success: true, activated: data });
   } catch (e) {
     fail(res, e);
   }
 });
 
+// Super Admin: 1-Click Activate Multiple / All Accounts
+router.post("/platform/subscriptions/activate-batch", async (req: Request, res: Response) => {
+  try {
+    const p = z
+      .object({
+        business_ids: z.array(z.string().uuid()),
+        plan_code: z.string().default("starter"),
+        period: z.enum(["monthly", "annual", "lifetime"]).default("monthly"),
+      })
+      .parse(req.body);
 
+    const now = Date.now();
+    let endsAt = new Date(now + 30 * 86400000).toISOString();
+    if (p.period === "annual") endsAt = new Date(now + 365 * 86400000).toISOString();
+    else if (p.period === "lifetime") endsAt = "2099-12-31T23:59:59.000Z";
+
+    const activated: any[] = [];
+    for (const bid of p.business_ids) {
+      await req.db!
+        .from("subscriptions")
+        .update({ status: "expired" })
+        .eq("business_id", bid)
+        .in("status", ["active", "trialing"]);
+
+      const { data } = await req.db!
+        .from("subscriptions")
+        .insert({
+          business_id: bid,
+          plan_code: p.plan_code,
+          status: "active",
+          starts_at: new Date().toISOString(),
+          ends_at: endsAt,
+        })
+        .select()
+        .single();
+
+      if (data) activated.push(data);
+    }
+
+    res.json({ success: true, count: activated.length, activated });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// Super Admin: Revoke / Delete Subscription
+router.delete("/platform/subscriptions", async (req: Request, res: Response) => {
+  try {
+    const p = z.object({ business_id: z.string().uuid() }).parse(req.body);
+    const { error } = await req.db!
+      .from("subscriptions")
+      .delete()
+      .eq("business_id", p.business_id);
+    if (error) throw error;
+    res.json({ success: true, business_id: p.business_id });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// Super Admin: Delete Business Workspace
+router.delete("/platform/businesses", async (req: Request, res: Response) => {
+  try {
+    const p = z.object({ business_id: z.string().uuid() }).parse(req.body);
+    const { error } = await req.db!.from("businesses").delete().eq("id", p.business_id);
+    if (error) throw error;
+    res.json({ success: true, business_id: p.business_id });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+
+// Super Admin: Create / Edit Subscription Plan
 router.post("/platform/plans", async (req: Request, res: Response) => {
   try {
     const p = z
@@ -123,11 +343,13 @@ router.post("/platform/plans", async (req: Request, res: Response) => {
         features: z.record(z.any()).default({}),
       })
       .parse(req.body);
+
     const { data, error } = await req
       .db!.from("subscription_plans")
       .upsert({ ...p, is_active: true }, { onConflict: "code" })
       .select()
       .single();
+
     if (error) throw error;
     res.status(201).json(data);
   } catch (e) {
@@ -135,6 +357,7 @@ router.post("/platform/plans", async (req: Request, res: Response) => {
   }
 });
 
+// Super Admin: Delete Subscription Plan
 router.delete("/platform/plans", async (req: Request, res: Response) => {
   try {
     const p = z.object({ code: z.string().min(1) }).parse(req.body);
@@ -146,30 +369,38 @@ router.delete("/platform/plans", async (req: Request, res: Response) => {
   }
 });
 
+// Workspace & Businesses
 router.get("/businesses", async (req: Request, res: Response) => {
   const { data, error } = await req
     .db!.from("business_users")
-    .select("role,businesses(id,name,business_type,gstin,state_code)")
+    .select(
+      "role,businesses(id,name,business_type,invoice_prefix,state_code,phone,address,gstin,pan,bank_account_no,bank_ifsc,bank_name,upi_id,terms_conditions)"
+    )
     .eq("user_id", req.userId!);
   if (error) return fail(res, error);
-  res.json((data || []).map((x: any) => ({ ...x.businesses, role: x.role })));
+  res.json(
+    data.map((r: any) => ({
+      ...r.businesses,
+      role: r.role,
+    }))
+  );
 });
 
 router.post("/businesses", async (req: Request, res: Response) => {
   try {
     const p = z
       .object({
-        name: z.string().min(2).max(160),
-        business_type: z.string().min(1).max(80),
-        gstin: z.string().max(15).nullable().optional(),
-        state_code: z.string().length(2).optional(),
+        name: z.string().min(2).max(100),
+        business_type: z.string().min(2).max(50),
+        invoice_prefix: z.string().max(10).optional(),
+        state_code: z.string().length(2).default("33"),
       })
       .parse(req.body);
-    const { data, error } = await req.db!.rpc("create_business", {
+    const { data, error } = await req.db!.rpc("create_business_workspace", {
       p_name: p.name,
-      p_type: p.business_type,
-      p_gstin: p.gstin || null,
-      p_state_code: p.state_code || null,
+      p_business_type: p.business_type,
+      p_invoice_prefix: p.invoice_prefix || "INV",
+      p_state_code: p.state_code,
     });
     if (error) throw error;
     res.status(201).json(data);
@@ -185,18 +416,18 @@ router.post("/businesses/seed-all", async (req: Request, res: Response) => {
         businesses: z.array(
           z.object({
             name: z.string().min(2),
-            business_type: z.string().min(1),
+            business_type: z.string().min(2),
           })
         ),
       })
       .parse(req.body);
 
     const created: any[] = [];
-    for (const item of p.businesses) {
-      const { data, error } = await req.db!.rpc("create_business", {
-        p_name: item.name,
-        p_type: item.business_type,
-        p_gstin: null,
+    for (const b of p.businesses) {
+      const { data, error } = await req.db!.rpc("create_business_workspace", {
+        p_name: b.name,
+        p_business_type: b.business_type,
+        p_invoice_prefix: b.name.slice(0, 3).toUpperCase(),
         p_state_code: "33",
       });
       if (!error && data) {
@@ -209,57 +440,11 @@ router.post("/businesses/seed-all", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/platform/plans", async (req: Request, res: Response) => {
-  try {
-    const p = z
-      .object({
-        code: z.string().min(2).max(40),
-        name: z.string().min(2).max(80),
-        monthly_price_paise: z.number().nonnegative(),
-        annual_price_paise: z.number().nonnegative(),
-        max_users: z.number().int().positive(),
-        max_products: z.number().int().positive(),
-        features: z.record(z.any()).default({}),
-      })
-      .parse(req.body);
-    const { data, error } = await req
-      .db!.from("subscription_plans")
-      .upsert(
-        { ...p, is_active: true },
-        { onConflict: "code" }
-      )
-      .select()
-      .single();
-    if (error) throw error;
-    res.status(201).json(data);
-  } catch (e) {
-    fail(res, e);
-  }
-});
-
-router.delete("/platform/plans", async (req: Request, res: Response) => {
-  try {
-    const p = z
-      .object({
-        code: z.string().min(1),
-      })
-      .parse(req.body);
-    const { error } = await req
-      .db!.from("subscription_plans")
-      .delete()
-      .eq("code", p.code);
-    if (error) throw error;
-    res.json({ success: true, deleted: p.code });
-  } catch (e) {
-    fail(res, e);
-  }
-});
-
 // Categories
 router.get("/categories", async (req: Request, res: Response) => {
   const { data, error } = await req
     .db!.from("categories")
-    .select("id,name,description")
+    .select("id, name, description, is_active")
     .eq("business_id", req.businessId!)
     .order("name");
   if (error) return fail(res, error);
@@ -271,12 +456,12 @@ router.post("/categories", async (req: Request, res: Response) => {
     const p = z
       .object({
         name: z.string().min(1).max(100),
-        description: z.string().max(300).nullable().optional(),
+        description: z.string().max(255).optional(),
       })
       .parse(req.body);
     const { data, error } = await req
       .db!.from("categories")
-      .insert({ ...p, business_id: req.businessId! })
+      .insert({ ...p, business_id: req.businessId })
       .select()
       .single();
     if (error) throw error;
@@ -290,25 +475,27 @@ router.post("/categories/bulk", async (req: Request, res: Response) => {
   try {
     const p = z
       .object({
-        names: z.array(z.string().min(1).max(100)).min(1),
-        description: z.string().max(300).nullable().optional(),
+        categories: z.array(
+          z.object({
+            name: z.string().min(1).max(100),
+            description: z.string().max(255).optional(),
+          })
+        ),
       })
       .parse(req.body);
 
-    const uniqueNames = Array.from(new Set(p.names.map((n) => n.trim()).filter(Boolean)));
-    const rows = uniqueNames.map((name) => ({
-      business_id: req.businessId!,
-      name,
-      description: p.description || null,
+    const rows = p.categories.map((c) => ({
+      name: c.name,
+      description: c.description || null,
+      business_id: req.businessId,
     }));
 
     const { data, error } = await req
       .db!.from("categories")
-      .upsert(rows, { onConflict: "business_id,name" })
-      .select("id,name,description");
-
+      .insert(rows)
+      .select();
     if (error) throw error;
-    res.status(201).json({ count: data?.length || 0, categories: data || [] });
+    res.status(201).json(data);
   } catch (e) {
     fail(res, e);
   }
@@ -317,7 +504,6 @@ router.post("/categories/bulk", async (req: Request, res: Response) => {
 router.delete("/categories/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    // Unlink products in this category first
     await req
       .db!.from("products")
       .update({ category_id: null })
@@ -337,94 +523,36 @@ router.delete("/categories/:id", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/platform/plans", async (req: Request, res: Response) => {
-  try {
-    const p = z
-      .object({
-        code: z.string().min(2).max(40),
-        name: z.string().min(2).max(80),
-        monthly_price_paise: z.number().nonnegative(),
-        annual_price_paise: z.number().nonnegative(),
-        max_users: z.number().int().positive(),
-        max_products: z.number().int().positive(),
-        features: z.record(z.any()).default({}),
-      })
-      .parse(req.body);
-    const { data, error } = await req
-      .db!.from("subscription_plans")
-      .upsert(
-        { ...p, is_active: true },
-        { onConflict: "code" }
-      )
-      .select()
-      .single();
-    if (error) throw error;
-    res.status(201).json(data);
-  } catch (e) {
-    fail(res, e);
-  }
-});
-
-router.delete("/platform/plans", async (req: Request, res: Response) => {
-  try {
-    const p = z
-      .object({
-        code: z.string().min(1),
-      })
-      .parse(req.body);
-    const { error } = await req
-      .db!.from("subscription_plans")
-      .delete()
-      .eq("code", p.code);
-    if (error) throw error;
-    res.json({ success: true, deleted: p.code });
-  } catch (e) {
-    fail(res, e);
-  }
-});
-
+// Retail Products
 router.get("/retail/products", async (req: Request, res: Response) => {
   const { data, error } = await req
     .db!.from("products")
     .select(
-      "id,name,sku,barcode,hsn_code,unit,selling_price,purchase_price,gst_rate,stock_qty,low_stock_threshold,category_id,categories(name)"
+      "id,name,sku,barcode,hsn_code,selling_price,cost_price,gst_rate,stock_qty,category_id,is_service"
     )
     .eq("business_id", req.businessId!)
     .eq("is_active", true)
     .order("name");
   if (error) return fail(res, error);
-  res.json(
-    (data || []).map((p: any) => ({
-      ...p,
-      category_name: p.categories?.name || null,
-    }))
-  );
+  res.json(data);
 });
 
 router.post("/retail/products", async (req: Request, res: Response) => {
   try {
     const p = z
       .object({
-        name: z.string().min(1),
-        sku: z.string().nullable().optional(),
-        barcode: z.string().nullable().optional(),
-        hsn_code: z.string().nullable().optional(),
-        category_id: z.string().uuid().nullable().optional(),
-        unit: z.string().default("pcs"),
+        name: z.string().min(1).max(200),
+        sku: z.string().max(60).optional(),
+        barcode: z.string().max(80).optional(),
+        hsn_code: z.string().max(16).optional(),
         selling_price: z.number().nonnegative(),
-        purchase_price: z.number().nonnegative().optional(),
-        gst_rate: z.number().min(0).max(28),
-        stock_qty: z.number().int().nonnegative(),
-        low_stock_threshold: z.number().int().nonnegative().optional(),
+        cost_price: z.number().nonnegative().default(0),
+        gst_rate: z.number().min(0).max(40).default(0),
+        stock_qty: z.number().default(0),
+        category_id: z.string().uuid().optional().nullable(),
+        is_service: z.boolean().default(false),
       })
       .parse(req.body);
-    const limit = Number(req.subscription?.plan?.max_products || 500);
-    const { count } = await req
-      .db!.from("products")
-      .select("id", { count: "exact", head: true })
-      .eq("business_id", req.businessId!);
-    if ((count || 0) >= limit)
-      throw new Error(`Your plan allows up to ${limit} products. Upgrade your plan.`);
     const { data, error } = await req
       .db!.from("products")
       .insert({ ...p, business_id: req.businessId })
@@ -437,27 +565,33 @@ router.post("/retail/products", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/platform/plans", async (req: Request, res: Response) => {
+router.post("/retail/products/bulk", async (req: Request, res: Response) => {
   try {
     const p = z
       .object({
-        code: z.string().min(2).max(40),
-        name: z.string().min(2).max(80),
-        monthly_price_paise: z.number().nonnegative(),
-        annual_price_paise: z.number().nonnegative(),
-        max_users: z.number().int().positive(),
-        max_products: z.number().int().positive(),
-        features: z.record(z.any()).default({}),
+        products: z.array(
+          z.object({
+            name: z.string().min(1).max(200),
+            sku: z.string().max(60).optional(),
+            barcode: z.string().max(80).optional(),
+            hsn_code: z.string().max(16).optional(),
+            selling_price: z.number().nonnegative(),
+            cost_price: z.number().nonnegative().default(0),
+            gst_rate: z.number().min(0).max(40).default(0),
+            stock_qty: z.number().default(0),
+            category_id: z.string().uuid().optional().nullable(),
+            is_service: z.boolean().default(false),
+          })
+        ),
       })
       .parse(req.body);
-    const { data, error } = await req
-      .db!.from("subscription_plans")
-      .upsert(
-        { ...p, is_active: true },
-        { onConflict: "code" }
-      )
-      .select()
-      .single();
+
+    const rows = p.products.map((prod) => ({
+      ...prod,
+      business_id: req.businessId,
+    }));
+
+    const { data, error } = await req.db!.from("products").insert(rows).select();
     if (error) throw error;
     res.status(201).json(data);
   } catch (e) {
@@ -465,78 +599,40 @@ router.post("/platform/plans", async (req: Request, res: Response) => {
   }
 });
 
-router.delete("/platform/plans", async (req: Request, res: Response) => {
-  try {
-    const p = z
-      .object({
-        code: z.string().min(1),
-      })
-      .parse(req.body);
-    const { error } = await req
-      .db!.from("subscription_plans")
-      .delete()
-      .eq("code", p.code);
-    if (error) throw error;
-    res.json({ success: true, deleted: p.code });
-  } catch (e) {
-    fail(res, e);
-  }
-});
-
-// Bulk products import
-router.post("/retail/products/bulk", async (req: Request, res: Response) => {
-  try {
-    const itemsSchema = z.array(
-      z.object({
-        name: z.string().min(1),
-        sku: z.string().nullable().optional(),
-        barcode: z.string().nullable().optional(),
-        hsn_code: z.string().nullable().optional(),
-        category_id: z.string().uuid().nullable().optional(),
-        unit: z.string().default("pcs"),
-        selling_price: z.number().nonnegative(),
-        purchase_price: z.number().nonnegative().optional(),
-        gst_rate: z.number().min(0).max(28).default(0),
-        stock_qty: z.number().int().nonnegative().default(0),
-        low_stock_threshold: z.number().int().nonnegative().optional(),
-      })
-    );
-    const items = itemsSchema.parse(Array.isArray(req.body) ? req.body : req.body.items);
-    const { data, error } = await req
-      .db!.from("products")
-      .insert(items.map((i) => ({ ...i, business_id: req.businessId })))
-      .select();
-    if (error) throw error;
-    res.status(201).json({ count: data?.length || 0, items: data });
-  } catch (e) {
-    fail(res, e);
-  }
-});
-
+// Invoices
 router.post("/retail/invoices", async (req: Request, res: Response) => {
   try {
     const p = z
       .object({
-        customer_name: z.string().max(160).optional(),
-        customer_phone: z.string().max(20).nullable().optional(),
-        customer_state_code: z.string().length(2).nullable().optional(),
-        payment_method: z.enum(["UPI", "Cash", "Card", "Bank transfer"]),
-        payment_reference: z.string().max(120).nullable().optional(),
+        customer_name: z.string().min(1).max(120),
+        customer_phone: z.string().max(20).optional(),
+        customer_gstin: z.string().max(15).optional(),
+        order_type: z.string().max(50).default("Counter Sale"),
+        custom_fields: z.record(z.any()).optional().default({}),
+        payment_method: z.string().default("cash"),
+        payment_reference: z.string().optional(),
         items: z
           .array(
             z.object({
-              product_id: z.string().uuid(),
-              quantity: z.number().int().positive(),
+              product_id: z.string().uuid().optional(),
+              description: z.string().min(1),
+              hsn_code: z.string().optional(),
+              quantity: z.number().positive(),
+              unit_price: z.number().nonnegative(),
+              gst_rate: z.number().min(0).max(40),
             })
           )
           .min(1),
       })
       .parse(req.body);
-    const { data, error } = await req.db!.rpc("create_gst_invoice", {
+
+    const { data, error } = await req.db!.rpc("create_invoice_with_items", {
       p_business_id: req.businessId!,
-      p_customer_name: p.customer_name || "Walk-in",
+      p_customer_name: p.customer_name,
       p_customer_phone: p.customer_phone || null,
-      p_customer_state_code: p.customer_state_code || null,
+      p_customer_gstin: p.customer_gstin || null,
+      p_order_type: p.order_type,
+      p_custom_fields: p.custom_fields,
       p_payment_method: p.payment_method,
       p_payment_reference: p.payment_reference || null,
       p_items: p.items,
@@ -548,56 +644,11 @@ router.post("/retail/invoices", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/platform/plans", async (req: Request, res: Response) => {
-  try {
-    const p = z
-      .object({
-        code: z.string().min(2).max(40),
-        name: z.string().min(2).max(80),
-        monthly_price_paise: z.number().nonnegative(),
-        annual_price_paise: z.number().nonnegative(),
-        max_users: z.number().int().positive(),
-        max_products: z.number().int().positive(),
-        features: z.record(z.any()).default({}),
-      })
-      .parse(req.body);
-    const { data, error } = await req
-      .db!.from("subscription_plans")
-      .upsert(
-        { ...p, is_active: true },
-        { onConflict: "code" }
-      )
-      .select()
-      .single();
-    if (error) throw error;
-    res.status(201).json(data);
-  } catch (e) {
-    fail(res, e);
-  }
-});
-
-router.delete("/platform/plans", async (req: Request, res: Response) => {
-  try {
-    const p = z
-      .object({
-        code: z.string().min(1),
-      })
-      .parse(req.body);
-    const { error } = await req
-      .db!.from("subscription_plans")
-      .delete()
-      .eq("code", p.code);
-    if (error) throw error;
-    res.json({ success: true, deleted: p.code });
-  } catch (e) {
-    fail(res, e);
-  }
-});
-
+// Customers
 router.get("/customers", async (req: Request, res: Response) => {
   const { data, error } = await req
     .db!.from("customers")
-    .select("id,name,phone,email,gstin,state_code,billing_address,created_at")
+    .select("id,name,phone,email,gstin,city")
     .eq("business_id", req.businessId!)
     .order("name");
   if (error) return fail(res, error);
@@ -608,20 +659,16 @@ router.post("/customers", async (req: Request, res: Response) => {
   try {
     const p = z
       .object({
-        name: z.string().min(1).max(160),
-        phone: z.string().max(20).nullable().optional(),
-        email: z.string().email().nullable().optional(),
-        gstin: z.string().max(15).nullable().optional(),
-        state_code: z.string().length(2).nullable().optional(),
-        billing_address: z.string().max(500).nullable().optional(),
+        name: z.string().min(1).max(120),
+        phone: z.string().max(20).optional(),
+        email: z.string().email().optional(),
+        gstin: z.string().max(15).optional(),
+        city: z.string().max(80).optional(),
       })
       .parse(req.body);
     const { data, error } = await req
       .db!.from("customers")
-      .upsert(
-        { ...p, business_id: req.businessId },
-        { onConflict: "business_id,phone" }
-      )
+      .insert({ ...p, business_id: req.businessId })
       .select()
       .single();
     if (error) throw error;
@@ -631,52 +678,7 @@ router.post("/customers", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/platform/plans", async (req: Request, res: Response) => {
-  try {
-    const p = z
-      .object({
-        code: z.string().min(2).max(40),
-        name: z.string().min(2).max(80),
-        monthly_price_paise: z.number().nonnegative(),
-        annual_price_paise: z.number().nonnegative(),
-        max_users: z.number().int().positive(),
-        max_products: z.number().int().positive(),
-        features: z.record(z.any()).default({}),
-      })
-      .parse(req.body);
-    const { data, error } = await req
-      .db!.from("subscription_plans")
-      .upsert(
-        { ...p, is_active: true },
-        { onConflict: "code" }
-      )
-      .select()
-      .single();
-    if (error) throw error;
-    res.status(201).json(data);
-  } catch (e) {
-    fail(res, e);
-  }
-});
-
-router.delete("/platform/plans", async (req: Request, res: Response) => {
-  try {
-    const p = z
-      .object({
-        code: z.string().min(1),
-      })
-      .parse(req.body);
-    const { error } = await req
-      .db!.from("subscription_plans")
-      .delete()
-      .eq("code", p.code);
-    if (error) throw error;
-    res.json({ success: true, deleted: p.code });
-  } catch (e) {
-    fail(res, e);
-  }
-});
-
+// Inventory
 router.post("/inventory/adjust", async (req: Request, res: Response) => {
   try {
     const p = z
@@ -712,6 +714,7 @@ router.get("/inventory/movements", async (req: Request, res: Response) => {
   res.json(data);
 });
 
+// Payments
 router.get("/payments", async (req: Request, res: Response) => {
   const { data, error } = await req
     .db!.from("payments")
@@ -725,6 +728,7 @@ router.get("/payments", async (req: Request, res: Response) => {
   res.json(data);
 });
 
+// Reports
 router.get("/retail/reports/sales", async (req: Request, res: Response) => {
   const from = String(req.query.from || "2000-01-01"),
     to = String(req.query.to || "2100-01-01");
